@@ -1,0 +1,34 @@
+{
+  "name": "gambiafund",
+  "version": "0.0.1",
+  "private": true,
+  "description": "GambiaFund - A crowdfunding and donation platform built for The Gambia.",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm --workspace=frontend run dev",
+    "dev:backend": "npm --workspace=backend run dev",
+    "dev:all": "concurrently \"npm --workspace=frontend run dev\" \"npm --workspace=backend run dev\"",
+    "build": "npm --workspace=frontend run build && npm --workspace=backend run build",
+    "build:frontend": "npm --workspace=frontend run build",
+    "build:backend": "npm --workspace=backend run build",
+    "lint": "npm --workspace=frontend run lint",
+    "type-check": "npm --workspace=frontend run type-check",
+    "preview": "npm --workspace=frontend run preview",
+    "start:backend": "npm --workspace=backend run start",
+    "prisma:generate": "npm --workspace=backend run prisma:generate",
+    "prisma:migrate": "npm --workspace=backend run prisma:migrate",
+    "seed": "npm --workspace=backend run seed"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "eslint": "^9.39.4",
+    "typescript-eslint": "^8.58.2"
+  },
+  "dependencies": {
+    "@prisma/client": "^4.16.2",
+    "prisma": "^4.16.2"
+  }
+}

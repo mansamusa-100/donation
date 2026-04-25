@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Category {
+  Medical
+  Education
+  Business
+  Community
+  Emergency
+  Other
+}
+
+enum Currency {
+  GMD
+  USD
+}
+
+enum CampaignStatus {
+  Draft
+  PendingReview
+  Active
+  Closed
+  Rejected
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum WithdrawalRequestStatus {
+  Pending
+  Approved
+  Rejected
+  Paid
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  password        String
+  fullName        String
+  phoneNumber     String?
+  role            UserRole  @default(USER)
+  isActive        Boolean   @default(true)
+  passwordResetToken   String?   @unique
+  passwordResetExpires DateTime?
+  campaigns       Campaign[]
+  donations       Donation[]
+  withdrawalRequests WithdrawalRequest[]
+  wavePaymentIntents WavePaymentIntent[]
+  platformTips    PlatformTip[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model Campaign {
+  id               String         @id @default(cuid())
+  slug             String         @unique
+  title            String
+  creatorName      String
+  creatorAvatar    String
+  creatorId        String?
+  category         Category
+  shortDescription String
+  fullDescription  String
+  goalAmount       Int
+  raisedAmount     Int            @default(0)
+  donorCount       Int            @default(0)
+  daysLeft         Int
+  coverImage       String
+  verificationDocumentUrl String?
+  termsAcceptedAt         DateTime?
+  isTrending       Boolean        @default(false)
+  status           CampaignStatus @default(Active)
+  donations        Donation[]
+  withdrawalRequests WithdrawalRequest[]
+  wavePaymentIntents WavePaymentIntent[]
+  platformTips     PlatformTip[]
+  creator          User?          @relation(fields: [creatorId], references: [id], onDelete: SetNull)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model WavePaymentIntent {
+  id                  String    @id @default(cuid())
+  clientReference     String    @unique
+  campaignId          String
+  userId              String?
+  amount              Int
+  platformTipAmount   Int       @default(0)
+  currency            Currency  @default(GMD)
+  donorName           String
+  message             String?
+  isAnonymous         Boolean   @default(false)
+  waveSessionId       String?
+  waveCheckoutStatus  String?
+  wavePaymentStatus   String?
+  donationId          String?   @unique
+  donation            Donation? @relation(fields: [donationId], references: [id], onDelete: SetNull)
+  campaign            Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user                User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  platformTip         PlatformTip?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([campaignId])
+}
+
+model PlatformTip {
+  id                   String    @id @default(cuid())
+  wavePaymentIntentId  String?   @unique
+  userId               String?
+  donorName            String
+  amount               Int
+  currency             Currency  @default(GMD)
+  campaignId           String?
+  createdAt            DateTime    @default(now())
+  wavePaymentIntent    WavePaymentIntent? @relation(fields: [wavePaymentIntentId], references: [id], onDelete: SetNull)
+  user                 User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  campaign             Campaign?  @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId])
+  @@index([userId])
+}
+
+model WithdrawalRequest {
+  id         String                  @id @default(cuid())
+  campaignId String
+  userId     String
+  amount     Int
+  processingFeeAmount Int @default(0)
+  netAmount  Int                     @default(0)
+  currency   Currency                @default(GMD)
+  status     WithdrawalRequestStatus @default(Pending)
+  note       String?
+  adminNote  String?
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+  campaign   Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user       User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, status])
+  @@index([userId, createdAt])
+}
+
+model Donation {
+  id          String   @id @default(cuid())
+  campaignId  String
+  userId      String?
+  donorName   String
+  amount      Int
+  platformFeeAmount Int @default(0)
+  currency    Currency @default(GMD)
+  message     String?
+  isAnonymous Boolean  @default(false)
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  wavePaymentIntent WavePaymentIntent?
+
+  @@index([campaignId, createdAt])
+}
+
+model PlatformStat {
+  id               String   @id @default("platform")
+  totalRaised      Int
+  campaignsFunded  Int
+  totalDonors      Int
+  communitiesHelped Int
+  totalPlatformTips Int     @default(0)
+  updatedAt        DateTime @updatedAt
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  type       String
+  title      String
+  detail     String?
+  campaignId String?
+  userId     String?
+  actorId    String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}

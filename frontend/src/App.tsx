@@ -1,0 +1,120 @@
+import { Suspense, lazy, useEffect } from 'react';
+import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { Footer } from './components/Footer';
+import { Navbar } from './components/Navbar';
+import { RouteLoader } from './components/RouteLoader';
+import { HomePage } from './pages/HomePage';
+import { useAuth } from './context/AuthContext';
+import { setAuthToken } from './lib/api';
+
+const ExplorePage = lazy(async () => ({
+  default: (await import('./pages/ExplorePage')).ExplorePage
+}));
+
+const CampaignDetailPage = lazy(async () => ({
+  default: (await import('./pages/CampaignDetailPage')).CampaignDetailPage
+}));
+
+const CreateCampaignPage = lazy(async () => ({
+  default: (await import('./pages/CreateCampaignPage')).CreateCampaignPage
+}));
+
+const LoginPage = lazy(async () => ({
+  default: (await import('./pages/LoginPage')).LoginPage
+}));
+
+const RegisterPage = lazy(async () => ({
+  default: (await import('./pages/RegisterPage')).RegisterPage
+}));
+
+const ForgotPasswordPage = lazy(async () => ({
+  default: (await import('./pages/ForgotPasswordPage')).ForgotPasswordPage
+}));
+
+const ResetPasswordPage = lazy(async () => ({
+  default: (await import('./pages/ResetPasswordPage')).ResetPasswordPage
+}));
+
+const DashboardPage = lazy(async () => ({
+  default: (await import('./pages/DashboardPage')).DashboardPage
+}));
+
+const AdminPage = lazy(async () => ({
+  default: (await import('./pages/AdminPage')).AdminPage
+}));
+
+const PaymentWaveReturnPage = lazy(async () => ({
+  default: (await import('./pages/PaymentWaveReturnPage')).PaymentWaveReturnPage
+}));
+
+function ScrollManager() {
+  const { pathname, hash } = useLocation();
+
+  useEffect(() => {
+    if (hash) {
+      const target = document.querySelector(hash);
+
+      if (target instanceof HTMLElement) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+    }
+
+    window.scrollTo(0, 0);
+  }, [pathname, hash]);
+
+  return null;
+}
+
+function AppChrome() {
+  const { pathname } = useLocation();
+  const isAdminShell = pathname.startsWith('/admin');
+
+  return (
+    <div
+      className={
+        isAdminShell
+          ? 'min-h-screen font-body text-surface-900 bg-slate-100'
+          : 'flex flex-col min-h-screen font-body text-surface-900 bg-surface-50'
+      }>
+      {!isAdminShell && <Navbar />}
+      <main className={isAdminShell ? 'min-h-screen' : 'flex-grow'}>
+        <Suspense fallback={<RouteLoader />}>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/explore" element={<ExplorePage />} />
+            <Route path="/campaign/:slug" element={<CampaignDetailPage />} />
+            <Route path="/create" element={<CreateCampaignPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/admin" element={<AdminPage />} />
+            <Route path="/payment/wave/return" element={<PaymentWaveReturnPage />} />
+          </Routes>
+        </Suspense>
+      </main>
+      {!isAdminShell && <Footer />}
+    </div>
+  );
+}
+
+function AppInner() {
+  const { token } = useAuth();
+
+  useEffect(() => {
+    setAuthToken(token);
+  }, [token]);
+
+  return (
+    <BrowserRouter>
+      <ScrollManager />
+      <AppChrome />
+    </BrowserRouter>
+  );
+}
+
+export function App() {
+  return <AppInner />;
+}
