@@ -5,18 +5,46 @@ import { CampaignStatus, WithdrawalRequestStatus } from '@prisma/client';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { prisma } from '../lib/prisma.js';
 import { uploadsFsPathFromPublicUrl } from '../lib/uploadPaths.js';
-import { authenticate, requireAdmin, AuthRequest } from '../lib/auth.js';
+import {
+  authenticate,
+  requireAdmin,
+  attachAdminPanelContext,
+  requireAdminPanel,
+  requireAnyAdminPanel,
+  hashPassword,
+  AuthRequest
+} from '../lib/auth.js';
 import { recordActivity } from '../lib/activityLog.js';
 import { notifyCreatorCampaignDecision, notifyCreatorWithdrawalStatus } from '../lib/mail.js';
+import { assertCanAssignPermissions } from '../config/adminPermissions.js';
 
 const adminRouter = Router();
 
-// Apply authentication to all admin routes
 adminRouter.use(authenticate);
 adminRouter.use(requireAdmin);
+adminRouter.use(asyncHandler(attachAdminPanelContext));
+
+function otherAdminsWhoCanManageAdmins(excludeUserId: string): Promise<number> {
+  return prisma.user
+    .findMany({
+      where: { role: 'ADMIN', isActive: true, id: { not: excludeUserId } },
+      select: { adminPanelPermissions: true }
+    })
+    .then(
+      (rows) =>
+        rows.filter(
+          (r) => r.adminPanelPermissions.length === 0 || r.adminPanelPermissions.includes('admins')
+        ).length
+    );
+}
+
+function canManageAdminsList(perms: string[]): boolean {
+  return perms.length === 0 || perms.includes('admins');
+}
 
 adminRouter.get(
   '/activity',
+  requireAdminPanel('overview'),
   asyncHandler(async (_req, res) => {
     const items = await prisma.activityLog.findMany({
       orderBy: { createdAt: 'desc' },
@@ -38,6 +66,7 @@ const patchWithdrawalRequestSchema = z.object({
 // Get all pending campaigns
 adminRouter.get(
   '/campaigns/pending',
+  requireAdminPanel('queue'),
   asyncHandler(async (_req, res) => {
     const campaigns = await prisma.campaign.findMany({
       where: {
@@ -66,6 +95,7 @@ adminRouter.get(
 // Get all campaigns (admin view)
 adminRouter.get(
   '/campaigns',
+  requireAdminPanel('campaigns'),
   asyncHandler(async (_req, res) => {
     const campaigns = await prisma.campaign.findMany({
       include: {
@@ -89,6 +119,7 @@ adminRouter.get(
 
 adminRouter.get(
   '/campaigns/:campaignId/verification-document',
+  requireAnyAdminPanel(['queue', 'campaigns']),
   asyncHandler(async (req: AuthRequest, res) => {
     const campaignId = String(req.params.campaignId);
     const campaign = await prisma.campaign.findUnique({
@@ -121,6 +152,7 @@ adminRouter.get(
 // Approve/reject a campaign
 adminRouter.patch(
   '/campaigns/:campaignId/status',
+  requireAnyAdminPanel(['queue', 'campaigns']),
   asyncHandler(async (req: AuthRequest, res) => {
     const campaignId = String(req.params.campaignId);
     const body = approveCampaignSchema.parse(req.body);
@@ -184,6 +216,7 @@ adminRouter.patch(
 
 adminRouter.get(
   '/withdrawal-requests',
+  requireAdminPanel('withdrawals'),
   asyncHandler(async (_req, res) => {
     const list = await prisma.withdrawalRequest.findMany({
       orderBy: { createdAt: 'desc' },
@@ -220,6 +253,7 @@ const allowedWithdrawalTransitions: Record<
 
 adminRouter.patch(
   '/withdrawal-requests/:requestId',
+  requireAdminPanel('withdrawals'),
   asyncHandler(async (req: AuthRequest, res) => {
     const requestId = String(req.params.requestId);
     const body = patchWithdrawalRequestSchema.parse(req.body);
@@ -297,6 +331,7 @@ adminRouter.patch(
 // Get all users
 adminRouter.get(
   '/users',
+  requireAdminPanel('users'),
   asyncHandler(async (_req, res) => {
     const users = await prisma.user.findMany({
       select: {
@@ -326,6 +361,7 @@ adminRouter.get(
 // Deactivate/activate user
 adminRouter.patch(
   '/users/:userId/status',
+  requireAdminPanel('users'),
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = String(req.params.userId);
     const { isActive } = z.object({ isActive: z.boolean() }).parse(req.body);
@@ -374,6 +410,7 @@ adminRouter.patch(
 // Get dashboard statistics
 adminRouter.get(
   '/stats',
+  requireAdminPanel('overview'),
   asyncHandler(async (_req, res) => {
     const [
       totalCampaigns,
@@ -421,6 +458,150 @@ adminRouter.get(
         totalWithdrawalProcessingFees: withdrawalFeePaidSum._sum.processingFeeAmount ?? 0
       }
     });
+  })
+);
+
+const createAdminAccountSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  fullName: z.string().min(2),
+  phoneNumber: z.string().max(30).optional(),
+  /** Empty = full admin panel; otherwise only these areas. */
+  adminPanelPermissions: z.array(z.string()).default([])
+});
+
+const patchAdminPermissionsSchema = z.object({
+  adminPanelPermissions: z.array(z.string())
+});
+
+adminRouter.get(
+  '/accounts',
+  requireAdminPanel('admins'),
+  asyncHandler(async (_req, res) => {
+    const rows = await prisma.user.findMany({
+      where: { role: 'ADMIN' },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phoneNumber: true,
+        isActive: true,
+        adminPanelPermissions: true,
+        createdAt: true
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+    res.json(
+      rows.map((r) => ({
+        ...r,
+        accessScope: r.adminPanelPermissions.length === 0 ? 'full' : 'limited'
+      }))
+    );
+  })
+);
+
+adminRouter.post(
+  '/accounts',
+  requireAdminPanel('admins'),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const body = createAdminAccountSchema.parse(req.body);
+    assertCanAssignPermissions(body.adminPanelPermissions);
+
+    const existing = await prisma.user.findFirst({
+      where: { email: { equals: body.email.trim(), mode: 'insensitive' } }
+    });
+    if (existing) {
+      res.status(409).json({ message: 'An account with this email already exists' });
+      return;
+    }
+
+    const passwordHash = await hashPassword(body.password);
+    const created = await prisma.user.create({
+      data: {
+        email: body.email.trim(),
+        fullName: body.fullName,
+        phoneNumber: body.phoneNumber?.trim() || null,
+        password: passwordHash,
+        role: 'ADMIN',
+        adminPanelPermissions: body.adminPanelPermissions
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phoneNumber: true,
+        role: true,
+        adminPanelPermissions: true
+      }
+    });
+
+    await recordActivity({
+      type: 'ADMIN_ACCOUNT_CREATED',
+      title: `New admin: ${created.email}`,
+      detail: `Permissions: ${
+        created.adminPanelPermissions.length ? created.adminPanelPermissions.join(',') : 'full'
+      }`,
+      userId: created.id,
+      actorId: req.userId ?? null
+    });
+
+    res.status(201).json(created);
+  })
+);
+
+adminRouter.patch(
+  '/accounts/:userId/permissions',
+  requireAdminPanel('admins'),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = String(req.params.userId);
+    const body = patchAdminPermissionsSchema.parse(req.body);
+    assertCanAssignPermissions(body.adminPanelPermissions);
+
+    const target = await prisma.user.findUnique({ where: { id: userId } });
+    if (!target) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+    if (target.role !== 'ADMIN') {
+      res.status(400).json({ message: 'User is not an admin' });
+      return;
+    }
+
+    const wasManaging = canManageAdminsList(target.adminPanelPermissions);
+    const willManage = canManageAdminsList(body.adminPanelPermissions);
+    if (wasManaging && !willManage) {
+      const others = await otherAdminsWhoCanManageAdmins(userId);
+      if (others < 1) {
+        res.status(400).json({
+          message:
+            'At least one other admin must keep the “Admins” permission (or full access) before you can remove it here.'
+        });
+        return;
+      }
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: { adminPanelPermissions: body.adminPanelPermissions },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        adminPanelPermissions: true
+      }
+    });
+
+    await recordActivity({
+      type: 'ADMIN_PERMISSIONS_CHANGED',
+      title: `Admin permissions: ${updated.email}`,
+      detail: `Keys: ${
+        updated.adminPanelPermissions.length ? updated.adminPanelPermissions.join(',') : 'full'
+      }`,
+      userId: updated.id,
+      actorId: req.userId ?? null
+    });
+
+    res.json(updated);
   })
 );
 

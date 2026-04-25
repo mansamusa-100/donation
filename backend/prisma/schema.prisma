@@ -49,6 +49,7 @@ model User {
   phoneNumber     String?
   role            UserRole  @default(USER)
   isActive        Boolean   @default(true)
+  adminPanelPermissions String[] @default([])
   passwordResetToken   String?   @unique
   passwordResetExpires DateTime?
   campaigns       Campaign[]

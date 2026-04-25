@@ -1,11 +1,8 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { getCurrentUser, setAuthToken } from '../lib/api';
+import type { User } from '../types/user';
 
-export interface User {
-  id: string;
-  email: string;
-  fullName: string;
-  role: 'ADMIN' | 'USER';
-}
+export type { User } from '../types/user';
 
 interface AuthContextType {
   user: User | null;
@@ -14,12 +11,14 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<User>;
   register: (email: string, password: string, fullName: string, phoneNumber?: string) => Promise<User>;
+  refreshUser: () => Promise<void>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const TOKEN_STORAGE_KEY = 'gambiafund_token';
+/** Legacy: user profile is no longer persisted; remove on load. */
 const USER_STORAGE_KEY = 'gambiafund_user';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -27,23 +26,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Initialize auth state from localStorage
-  useEffect(() => {
-    const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-    const storedUser = localStorage.getItem(USER_STORAGE_KEY);
+  const clearSession = useCallback(() => {
+    setUser(null);
+    setToken(null);
+    setAuthToken(null);
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
+  }, []);
 
-    if (storedToken && storedUser) {
+  // Restore session: token only, then /api/auth/me (user stays in memory)
+  useEffect(() => {
+    let cancelled = false;
+    const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
+
+    async function bootstrap() {
+      if (!storedToken) {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      setToken(storedToken);
+      setAuthToken(storedToken);
       try {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+        const me = await getCurrentUser();
+        if (!cancelled) {
+          setUser(me);
+        }
       } catch (error) {
-        console.error('Failed to restore auth state:', error);
-        localStorage.removeItem(TOKEN_STORAGE_KEY);
-        localStorage.removeItem(USER_STORAGE_KEY);
+        console.error('Session restore failed:', error);
+        if (!cancelled) {
+          clearSession();
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     }
 
-    setIsLoading(false);
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
+  }, [clearSession]);
+
+  const refreshUser = useCallback(async () => {
+    const t = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (!t) {
+      return;
+    }
+    setAuthToken(t);
+    const me = await getCurrentUser();
+    setUser(me);
   }, []);
 
   const login = async (email: string, password: string): Promise<User> => {
@@ -65,11 +102,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
       setToken(data.token);
-      setUser(data.user);
-
       localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
-      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user));
-      return data.user as User;
+      setAuthToken(data.token);
+      const me = await getCurrentUser();
+      setUser(me);
+      return me;
     } finally {
       setIsLoading(false);
     }
@@ -104,21 +141,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
       setToken(data.token);
-      setUser(data.user);
-
       localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
-      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user));
-      return data.user as User;
+      setAuthToken(data.token);
+      const me = await getCurrentUser();
+      setUser(me);
+      return me;
     } finally {
       setIsLoading(false);
     }
   };
 
   const logout = () => {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem(TOKEN_STORAGE_KEY);
-    localStorage.removeItem(USER_STORAGE_KEY);
+    clearSession();
   };
 
   return (
@@ -130,6 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user && !!token,
         login,
         register,
+        refreshUser,
         logout
       }}>
       {children}

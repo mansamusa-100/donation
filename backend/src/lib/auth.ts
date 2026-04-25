@@ -2,11 +2,14 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import bcryptjs from 'bcryptjs';
 import { env } from '../config/env.js';
+import { hasAdminPanelAccess, hasAnyAdminPanelAccess, type AdminPanelKey } from '../config/adminPermissions.js';
 import { prisma } from './prisma.js';
 
 export interface AuthRequest extends Request {
   userId?: string;
   userRole?: 'ADMIN' | 'USER';
+  /** Filled on `/api/admin` routes for ADMIN users after `attachAdminPanelContext`. */
+  adminPanelPermissions?: string[];
 }
 
 export const JWT_SECRET = env.JWT_SECRET || 'your-secret-key-change-in-production';
@@ -87,6 +90,56 @@ export function requireAdmin(
   }
 
   next();
+}
+
+/** After `requireAdmin` on admin router: loads `adminPanelPermissions` for permission checks. */
+export async function attachAdminPanelContext(
+  req: AuthRequest,
+  _res: Response,
+  next: NextFunction
+): Promise<void> {
+  if (req.userRole !== 'ADMIN' || !req.userId) {
+    next();
+    return;
+  }
+  try {
+    const u = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { adminPanelPermissions: true }
+    });
+    req.adminPanelPermissions = u?.adminPanelPermissions ?? [];
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+export function requireAdminPanel(permission: AdminPanelKey) {
+  return (req: AuthRequest, res: Response, next: NextFunction): void => {
+    if (req.userRole !== 'ADMIN') {
+      res.status(403).json({ message: 'Admin access required' });
+      return;
+    }
+    if (!hasAdminPanelAccess(req.userRole, req.adminPanelPermissions, permission)) {
+      res.status(403).json({ message: 'You do not have permission for this area' });
+      return;
+    }
+    next();
+  };
+}
+
+export function requireAnyAdminPanel(permissions: AdminPanelKey[]) {
+  return (req: AuthRequest, res: Response, next: NextFunction): void => {
+    if (req.userRole !== 'ADMIN') {
+      res.status(403).json({ message: 'Admin access required' });
+      return;
+    }
+    if (!hasAnyAdminPanelAccess(req.userRole, req.adminPanelPermissions, permissions)) {
+      res.status(403).json({ message: 'You do not have permission for this area' });
+      return;
+    }
+    next();
+  };
 }
 
 export function requireAuth(

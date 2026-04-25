@@ -7,12 +7,14 @@ import type {
   PlatformStats } from
 '../types/campaign';
 import type {
+  AdminAccountRow,
   AdminActivityItem,
   AdminCampaign,
   AdminDashboardStats,
   AdminUserRow,
-  AdminWithdrawalRequestRow } from
-'../types/admin';
+  AdminWithdrawalRequestRow
+} from '../types/admin';
+import type { User } from '../types/user';
 
 type CampaignSortOption = 'trending' | 'newest' | 'funded';
 
@@ -90,6 +92,10 @@ async function requestBlob(path: string, init?: RequestInit) {
   }
 
   return response.blob();
+}
+
+export function getCurrentUser() {
+  return request<User>('/api/auth/me');
 }
 
 export const api = {
@@ -330,5 +336,41 @@ export const api = {
         body: JSON.stringify(payload)
       }
     );
+  },
+
+  getAdminAccounts() {
+    return request<AdminAccountRow[]>('/api/admin/accounts');
+  },
+
+  createAdminAccount(payload: {
+    email: string;
+    password: string;
+    fullName: string;
+    phoneNumber?: string;
+    adminPanelPermissions: string[];
+  }) {
+    return request<{
+      id: string;
+      email: string;
+      fullName: string;
+      phoneNumber?: string | null;
+      role: string;
+      adminPanelPermissions: string[];
+    }>('/api/admin/accounts', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  updateAdminAccountPermissions(userId: string, adminPanelPermissions: string[]) {
+    return request<{
+      id: string;
+      email: string;
+      fullName: string;
+      adminPanelPermissions: string[];
+    }>(`/api/admin/accounts/${encodeURIComponent(userId)}/permissions`, {
+      method: 'PATCH',
+      body: JSON.stringify({ adminPanelPermissions })
+    });
   }
 };

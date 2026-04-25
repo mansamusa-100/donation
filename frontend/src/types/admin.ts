@@ -77,6 +77,25 @@ export interface AdminActivityItem {
   createdAt: string;
 }
 
+export type AdminPanelKey =
+  | 'overview'
+  | 'queue'
+  | 'campaigns'
+  | 'withdrawals'
+  | 'users'
+  | 'admins';
+
+export interface AdminAccountRow {
+  id: string;
+  email: string;
+  fullName: string;
+  phoneNumber?: string | null;
+  isActive: boolean;
+  adminPanelPermissions: string[];
+  createdAt: string;
+  accessScope: 'full' | 'limited';
+}
+
 export type AdminWithdrawalStatus = 'Pending' | 'Approved' | 'Rejected' | 'Paid';
 
 export interface AdminWithdrawalRequestRow {

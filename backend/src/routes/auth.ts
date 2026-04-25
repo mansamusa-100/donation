@@ -64,7 +64,8 @@ authRouter.post(
         id: true,
         email: true,
         fullName: true,
-        role: true
+        role: true,
+        adminPanelPermissions: true
       }
     });
 
@@ -73,7 +74,13 @@ authRouter.post(
     void sendWelcomeEmail({ to: user.email, fullName: user.fullName });
 
     res.status(201).json({
-      user,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
+      },
       token
     });
   })
@@ -154,7 +161,16 @@ authRouter.post(
     const body = loginSchema.parse(req.body);
 
     const user = await prisma.user.findUnique({
-      where: { email: body.email }
+      where: { email: body.email },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        password: true,
+        isActive: true,
+        adminPanelPermissions: true
+      }
     });
 
     if (!user) {
@@ -181,7 +197,8 @@ authRouter.post(
         id: user.id,
         email: user.email,
         fullName: user.fullName,
-        role: user.role
+        role: user.role,
+        adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
       },
       token
     });
@@ -201,7 +218,8 @@ authRouter.get(
         phoneNumber: true,
         role: true,
         isActive: true,
-        createdAt: true
+        createdAt: true,
+        adminPanelPermissions: true
       }
     });
 
@@ -210,7 +228,16 @@ authRouter.get(
       return;
     }
 
-    res.json(user);
+    res.json({
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      phoneNumber: user.phoneNumber,
+      role: user.role,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+      adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
+    });
   })
 );
 
