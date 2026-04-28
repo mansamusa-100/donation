@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import cors from 'cors';
 import express from 'express';
@@ -33,13 +34,6 @@ app.post(
 app.use(express.json());
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
-app.get('/', (_req, res) => {
-  res.json({
-    name: 'BarakahFund API',
-    status: 'ok'
-  });
-});
-
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/campaigns', campaignsRouter);
@@ -48,6 +42,27 @@ app.use('/api/stats', statsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/uploads', uploadsRouter);
+
+/** Production: serve Vite build from workspace sibling when present (same container as API). */
+const frontendDist = path.join(process.cwd(), '..', 'frontend', 'dist');
+const spaIndex = path.join(frontendDist, 'index.html');
+if (fs.existsSync(spaIndex)) {
+  app.use(express.static(frontendDist));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api')) {
+      next();
+      return;
+    }
+    res.sendFile(path.resolve(spaIndex));
+  });
+} else {
+  app.get('/', (_req, res) => {
+    res.json({
+      name: 'BarakahFund API',
+      status: 'ok'
+    });
+  });
+}
 
 app.use((req, res) => {
   res.status(404).json({
