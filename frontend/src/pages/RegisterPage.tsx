@@ -122,7 +122,7 @@ export function RegisterPage() {
                 name="password"
                 value={formData.password}
                 onChange={handleChange}
-                placeholder=""
+                placeholder="********"
                 required
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
@@ -138,7 +138,7 @@ export function RegisterPage() {
                 name="confirmPassword"
                 value={formData.confirmPassword}
                 onChange={handleChange}
-                placeholder=""
+                placeholder="********"
                 required
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
