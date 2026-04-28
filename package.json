@@ -17,6 +17,7 @@
     "lint": "npm --workspace=frontend run lint",
     "type-check": "npm --workspace=frontend run type-check",
     "preview": "npm --workspace=frontend run preview",
+    "start": "npm run start:backend",
     "start:backend": "npm --workspace=backend run start",
     "prisma:generate": "npm --workspace=backend run prisma:generate",
     "prisma:migrate": "npm --workspace=backend run prisma:migrate",
