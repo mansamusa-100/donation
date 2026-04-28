@@ -13,6 +13,7 @@ import {
   X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { BRAND_LOGO_SRC, BRAND_NAME } from '../lib/brand';
 import { api } from '../lib/api';
 import { mediaUrl } from '../lib/mediaUrl';
 import type {
@@ -131,6 +132,63 @@ const NAV_DEF: { id: AdminTab; label: string; icon: typeof LayoutDashboardIcon }
   { id: 'admins', label: 'Admins', icon: UserCog }
 ];
 
+const ACTIVITY_PAGE_SIZE = 10;
+const ADMIN_TABLE_PAGE_SIZE = 12;
+
+function AdminPaginator({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  className = ''
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (p: number) => void;
+  className?: string;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+
+  return (
+    <div
+      className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-slate-100 px-4 py-3 bg-slate-50/80 ${className}`}>
+      <p className="text-xs text-slate-500">
+        {total === 0 ? (
+          'No entries'
+        ) : (
+          <>
+            Showing <span className="font-semibold text-slate-700">{from}</span>–
+            <span className="font-semibold text-slate-700">{to}</span> of{' '}
+            <span className="font-semibold text-slate-700">{total}</span>
+          </>
+        )}
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={page <= 1 || total === 0}
+          onClick={() => onPageChange(page - 1)}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+          Previous
+        </button>
+        <span className="text-xs font-semibold text-slate-600 tabular-nums px-1">
+          Page {page} / {totalPages}
+        </span>
+        <button
+          type="button"
+          disabled={page >= totalPages || total === 0}
+          onClick={() => onPageChange(page + 1)}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
 type NavItem = (typeof NAV_DEF)[number];
 
 function AdminNavItems({
@@ -190,6 +248,17 @@ export function AdminPage() {
   const [newAdminSubmitting, setNewAdminSubmitting] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
+  const [activityPage, setActivityPage] = useState(1);
+  const [activityTotal, setActivityTotal] = useState(0);
+  const [queuePage, setQueuePage] = useState(1);
+  const [queueTotal, setQueueTotal] = useState(0);
+  const [campaignsPage, setCampaignsPage] = useState(1);
+  const [campaignsTotal, setCampaignsTotal] = useState(0);
+  const [withdrawalsPage, setWithdrawalsPage] = useState(1);
+  const [withdrawalsTotal, setWithdrawalsTotal] = useState(0);
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersTotal, setUsersTotal] = useState(0);
+
   const canAccess = useCallback(
     (key: AdminPanelKey) => canAccessPanel(user?.role, user?.adminPanelPermissions, key),
     [user?.adminPanelPermissions, user?.role]
@@ -208,34 +277,69 @@ export function AdminPage() {
       if (can('overview')) {
         fetches.push(
           (async () => {
-            const [statsRes, activityRes] = await Promise.all([api.getAdminStats(), api.getAdminActivity()]);
+            const [statsRes, activityRes] = await Promise.all([
+              api.getAdminStats(),
+              api.getAdminActivity({ page: activityPage, pageSize: ACTIVITY_PAGE_SIZE })
+            ]);
             setStats(statsRes);
-            setActivity(activityRes);
+            setActivity(activityRes.items);
+            setActivityTotal(activityRes.total);
           })()
         );
       } else {
         setStats(null);
         setActivity([]);
+        setActivityTotal(0);
       }
       if (can('queue')) {
-        fetches.push(api.getAdminPendingCampaigns().then((r) => setPending(r)));
+        fetches.push(
+          api
+            .getAdminPendingCampaigns({ page: queuePage, pageSize: ADMIN_TABLE_PAGE_SIZE })
+            .then((r) => {
+              setPending(r.items);
+              setQueueTotal(r.total);
+            })
+        );
       } else {
         setPending([]);
+        setQueueTotal(0);
       }
       if (can('campaigns')) {
-        fetches.push(api.getAdminCampaigns().then((r) => setAllCampaigns(r)));
+        fetches.push(
+          api
+            .getAdminCampaigns({ page: campaignsPage, pageSize: ADMIN_TABLE_PAGE_SIZE })
+            .then((r) => {
+              setAllCampaigns(r.items);
+              setCampaignsTotal(r.total);
+            })
+        );
       } else {
         setAllCampaigns([]);
+        setCampaignsTotal(0);
       }
       if (can('users')) {
-        fetches.push(api.getAdminUsers().then((r) => setUsers(r)));
+        fetches.push(
+          api.getAdminUsers({ page: usersPage, pageSize: ADMIN_TABLE_PAGE_SIZE }).then((r) => {
+            setUsers(r.items);
+            setUsersTotal(r.total);
+          })
+        );
       } else {
         setUsers([]);
+        setUsersTotal(0);
       }
       if (can('withdrawals')) {
-        fetches.push(api.getAdminWithdrawalRequests().then((r) => setWithdrawals(r)));
+        fetches.push(
+          api
+            .getAdminWithdrawalRequests({ page: withdrawalsPage, pageSize: ADMIN_TABLE_PAGE_SIZE })
+            .then((r) => {
+              setWithdrawals(r.items);
+              setWithdrawalsTotal(r.total);
+            })
+        );
       } else {
         setWithdrawals([]);
+        setWithdrawalsTotal(0);
       }
       if (can('admins')) {
         fetches.push(
@@ -250,7 +354,14 @@ export function AdminPage() {
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Failed to load admin data');
     }
-  }, [user]);
+  }, [
+    user,
+    activityPage,
+    queuePage,
+    campaignsPage,
+    withdrawalsPage,
+    usersPage
+  ]);
 
   const navItems = useMemo(
     () => NAV_DEF.filter((n) => canAccess(n.id)),
@@ -468,8 +579,9 @@ export function AdminPage() {
           aria-label="Open admin menu">
           <Menu className="h-5 w-5" />
         </button>
-        <div className="min-w-0 flex-1 text-center pr-1">
-          <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">GambiaFund</p>
+        <div className="flex min-w-0 flex-1 flex-col items-center gap-1 pr-1 text-center">
+          <img src={BRAND_LOGO_SRC} alt="" className="h-7 w-7 object-contain" width={28} height={28} loading="lazy" />
+          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500">{BRAND_NAME}</p>
           <p className="truncate text-sm font-bold text-white font-display">Admin</p>
         </div>
         <Link
@@ -503,12 +615,22 @@ export function AdminPage() {
         aria-modal="true"
         aria-label="Admin menu">
         <div className="flex items-start justify-between gap-2 border-b border-slate-800 px-3 pb-3">
-          <div className="min-w-0 pl-0.5">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">GambiaFund</p>
-            <p className="font-display text-lg font-bold text-white">Admin</p>
-            <p className="mt-0.5 truncate text-xs text-slate-500" title={user.email}>
-              {user.fullName}
-            </p>
+          <div className="flex min-w-0 flex-1 items-start gap-2">
+            <img
+              src={BRAND_LOGO_SRC}
+              alt=""
+              className="mt-0.5 h-9 w-9 shrink-0 object-contain"
+              width={36}
+              height={36}
+              loading="lazy"
+            />
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{BRAND_NAME}</p>
+              <p className="font-display text-lg font-bold text-white">Admin</p>
+              <p className="mt-0.5 truncate text-xs text-slate-500" title={user.email}>
+                {user.fullName}
+              </p>
+            </div>
           </div>
           <button
             type="button"
@@ -536,11 +658,23 @@ export function AdminPage() {
         className="hidden w-56 shrink-0 min-h-0 min-h-screen flex-col border-r border-slate-800 bg-slate-950 text-slate-200 md:flex"
         aria-label="Admin sidebar">
         <div className="border-b border-slate-800 p-4">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">GambiaFund</p>
-          <p className="font-display text-lg font-bold text-white">Admin</p>
-          <p className="mt-1 truncate text-xs text-slate-500" title={user.email}>
-            {user.fullName}
-          </p>
+          <div className="flex items-center gap-2.5">
+            <img
+              src={BRAND_LOGO_SRC}
+              alt=""
+              className="h-9 w-9 shrink-0 object-contain"
+              width={36}
+              height={36}
+              loading="lazy"
+            />
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{BRAND_NAME}</p>
+              <p className="font-display text-lg font-bold text-white">Admin</p>
+              <p className="mt-0.5 truncate text-xs text-slate-500" title={user.email}>
+                {user.fullName}
+              </p>
+            </div>
+          </div>
         </div>
         <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
           <AdminNavItems items={navItems} activeTab={tab} onSelect={setTab} />
@@ -662,7 +796,7 @@ export function AdminPage() {
                     </p>
                   </div>
                 </div>
-                <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-100">
+                <div className="divide-y divide-slate-100">
                   {activity.length === 0 ? (
                     <p className="p-6 text-sm text-slate-500">No activity yet. New campaign submissions will appear here.</p>
                   ) : (
@@ -680,6 +814,12 @@ export function AdminPage() {
                     ))
                   )}
                 </div>
+                <AdminPaginator
+                  page={activityPage}
+                  pageSize={ACTIVITY_PAGE_SIZE}
+                  total={activityTotal}
+                  onPageChange={setActivityPage}
+                />
               </div>
             </div>
           )}
@@ -687,9 +827,9 @@ export function AdminPage() {
           {tab === 'queue' && (
             <div className="space-y-4">
               <p className="text-slate-600 text-sm">
-                {pending.length === 0
+                {queueTotal === 0
                   ? 'No campaigns are waiting for review.'
-                  : `${pending.length} campaign${pending.length === 1 ? '' : 's'} need your decision.`}
+                  : `${queueTotal} campaign${queueTotal !== 1 ? 's' : ''} in the review queue.`}
               </p>
               <div className="space-y-4">
                 {pending.map((c) => (
@@ -752,11 +892,18 @@ export function AdminPage() {
                   </article>
                 ))}
               </div>
+              <AdminPaginator
+                page={queuePage}
+                pageSize={ADMIN_TABLE_PAGE_SIZE}
+                total={queueTotal}
+                onPageChange={setQueuePage}
+              />
             </div>
           )}
 
           {tab === 'campaigns' && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-slate-500 font-semibold bg-slate-50">
@@ -827,10 +974,18 @@ export function AdminPage() {
                 </tbody>
               </table>
             </div>
+              <AdminPaginator
+                page={campaignsPage}
+                pageSize={ADMIN_TABLE_PAGE_SIZE}
+                total={campaignsTotal}
+                onPageChange={setCampaignsPage}
+              />
+            </div>
           )}
 
           {tab === 'withdrawals' && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
               {withdrawals.length === 0 ? (
                 <p className="p-8 text-sm text-slate-500">No withdrawal requests yet.</p>
               ) : (
@@ -912,10 +1067,18 @@ export function AdminPage() {
                 </table>
               )}
             </div>
+            <AdminPaginator
+              page={withdrawalsPage}
+              pageSize={ADMIN_TABLE_PAGE_SIZE}
+              total={withdrawalsTotal}
+              onPageChange={setWithdrawalsPage}
+            />
+            </div>
           )}
 
           {tab === 'users' && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-slate-500 font-semibold bg-slate-50">
@@ -965,6 +1128,13 @@ export function AdminPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+            <AdminPaginator
+              page={usersPage}
+              pageSize={ADMIN_TABLE_PAGE_SIZE}
+              total={usersTotal}
+              onPageChange={setUsersPage}
+            />
             </div>
           )}
 

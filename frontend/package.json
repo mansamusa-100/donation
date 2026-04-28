@@ -2,7 +2,7 @@
   "name": "gambiafund-frontend",
   "version": "0.0.1",
   "private": true,
-  "description": "Frontend for a crowdfunding and donation platform built for The Gambia.",
+  "description": "Frontend for BarakahFund — Vite + React crowdfunding UI.",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -22,7 +22,7 @@ ${escaped
   .split('\n\n')
   .map((p) => `<p style="margin:0 0 1em;">${p.replace(/\n/g, '<br/>')}</p>`)
   .join('')}
-<p style="color:#666;font-size:12px;margin-top:2em;">— GambiaFund</p>
+<p style="color:#666;font-size:12px;margin-top:2em;">— BarakahFund</p>
 </body></html>`;
 }
 
@@ -121,7 +121,7 @@ function clientBaseUrl(): string {
 
 export async function sendWelcomeEmail(params: { to: string; fullName: string }): Promise<void> {
   const explore = `${clientBaseUrl()}/explore`;
-  const subject = 'Welcome to GambiaFund';
+  const subject = 'Welcome to BarakahFund';
   const text = [
     `Hi ${params.fullName},`,
     '',
@@ -129,7 +129,7 @@ export async function sendWelcomeEmail(params: { to: string; fullName: string })
     '',
     `Browse campaigns: ${explore}`,
     '',
-    '— GambiaFund'
+    '— BarakahFund'
   ].join('\n');
   try {
     await sendEmail({ to: params.to, subject, text });
@@ -144,16 +144,16 @@ export async function sendCampaignCreatedConfirmation(params: {
   campaignTitle: string;
   campaignSlug: string;
 }): Promise<void> {
-  const subject = `[GambiaFund] We received your campaign: ${params.campaignTitle}`;
+  const subject = `[BarakahFund] We received your campaign: ${params.campaignTitle}`;
   const text = [
     `Hi ${params.fullName},`,
     '',
     `Your campaign "${params.campaignTitle}" was submitted successfully and is pending review by our team.`,
     "You'll get another email when it is approved and visible to the public.",
     '',
-    'Thank you for helping your community on GambiaFund.',
+    'Thank you for helping your community on BarakahFund.',
     '',
-    '— GambiaFund'
+    '— BarakahFund'
   ].join('\n');
   try {
     await sendEmail({ to: params.to, subject, text });
@@ -175,7 +175,7 @@ export async function sendDonationThankYouEmail(params: {
   const subject = `Thank you for supporting ${params.campaignTitle}`;
   const tipLine =
     params.platformTipAmount > 0
-      ? `\nVoluntary support to GambiaFund: D${params.platformTipAmount.toLocaleString()} (thank you!)\n`
+      ? `\nVoluntary support to BarakahFund: D${params.platformTipAmount.toLocaleString()} (thank you!)\n`
       : '\n';
   const text = [
     `Hi ${params.donorName},`,
@@ -184,7 +184,7 @@ export async function sendDonationThankYouEmail(params: {
     `View the campaign: ${url}`,
     '',
     'With gratitude,',
-    'GambiaFund'
+    'BarakahFund'
   ].join('\n');
   try {
     await sendEmail({ to: params.to, subject, text });
@@ -201,7 +201,7 @@ export async function sendWithdrawalRequestReceivedEmail(params: {
   netAmount: number;
   processingFeeAmount: number;
 }): Promise<void> {
-  const subject = `[GambiaFund] We’re processing your withdrawal request — ${params.campaignTitle}`;
+  const subject = `[BarakahFund] We’re processing your withdrawal request — ${params.campaignTitle}`;
   const text = [
     `Hi ${params.fullName},`,
     '',
@@ -213,7 +213,7 @@ export async function sendWithdrawalRequestReceivedEmail(params: {
     '',
     'Our team will review it and you will get another email when the status changes.',
     '',
-    '— GambiaFund'
+    '— BarakahFund'
   ].join('\n');
   try {
     await sendEmail({ to: params.to, subject, text });
@@ -227,7 +227,7 @@ export async function sendPasswordResetEmail(params: {
   fullName: string;
   resetUrl: string;
 }): Promise<void> {
-  const subject = 'Reset your GambiaFund password';
+  const subject = 'Reset your BarakahFund password';
   const text = [
     `Hi ${params.fullName},`,
     '',
@@ -235,7 +235,7 @@ export async function sendPasswordResetEmail(params: {
     '',
     params.resetUrl,
     '',
-    '— GambiaFund'
+    '— BarakahFund'
   ].join('\n');
   try {
     await sendEmail({ to: params.to, subject, text });
@@ -256,7 +256,7 @@ export async function notifyAdminsCampaignSubmitted(params: {
     select: { email: true }
   });
   const adminUrl = `${clientBaseUrl()}/admin`;
-  const subject = `[GambiaFund] New campaign pending review: ${params.title}`;
+  const subject = `[BarakahFund] New campaign pending review: ${params.title}`;
   const text = [
     'A new campaign has been submitted and needs your review.',
     '',
@@ -266,7 +266,7 @@ export async function notifyAdminsCampaignSubmitted(params: {
     '',
     `Open the admin panel: ${adminUrl}`,
     '',
-    '— GambiaFund'
+    '— BarakahFund'
   ].join('\n');
 
   for (const { email } of admins) {
@@ -287,8 +287,8 @@ export async function notifyCreatorCampaignDecision(params: {
   const publicUrl = `${clientBaseUrl()}/campaign/${params.slug}`;
   const subject =
     params.status === 'Active'
-      ? `[GambiaFund] Your campaign is live: ${params.title}`
-      : `[GambiaFund] Campaign update: ${params.title}`;
+      ? `[BarakahFund] Your campaign is live: ${params.title}`
+      : `[BarakahFund] Campaign update: ${params.title}`;
 
   let body: string;
   if (params.status === 'Active') {
@@ -297,20 +297,20 @@ export async function notifyCreatorCampaignDecision(params: {
       '',
       `View your public page: ${publicUrl}`,
       '',
-      '— GambiaFund'
+      '— BarakahFund'
     ].join('\n');
   } else if (params.status === 'Rejected') {
     body = [
       `Your campaign "${params.title}" was not approved at this time.`,
       'If you have questions, reply to this message or contact support.',
       '',
-      '— GambiaFund'
+      '— BarakahFund'
     ].join('\n');
   } else {
     body = [
       `Your campaign "${params.title}" has been closed by an administrator.`,
       '',
-      '— GambiaFund'
+      '— BarakahFund'
     ].join('\n');
   }
 
@@ -331,10 +331,10 @@ export async function notifyCreatorWithdrawalStatus(params: {
 }): Promise<void> {
   const subject =
     params.status === 'Paid'
-      ? `[GambiaFund] Payment complete — withdrawal for ${params.campaignTitle}`
+      ? `[BarakahFund] Payment complete — withdrawal for ${params.campaignTitle}`
       : params.status === 'Approved'
-        ? `[GambiaFund] Withdrawal approved: ${params.campaignTitle}`
-        : `[GambiaFund] Withdrawal update: ${params.campaignTitle}`;
+        ? `[BarakahFund] Withdrawal approved: ${params.campaignTitle}`
+        : `[BarakahFund] Withdrawal update: ${params.campaignTitle}`;
 
   const body = [
     `Campaign: ${params.campaignTitle}`,
@@ -348,7 +348,7 @@ export async function notifyCreatorWithdrawalStatus(params: {
         ? 'Your withdrawal request was approved. Payout will follow according to our schedule.'
         : 'Your withdrawal request was not approved. Contact support if you need clarification.',
     '',
-    '— GambiaFund'
+    '— BarakahFund'
   ].join('\n');
 
   try {

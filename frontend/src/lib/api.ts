@@ -11,6 +11,7 @@ import type {
   AdminActivityItem,
   AdminCampaign,
   AdminDashboardStats,
+  AdminPaged,
   AdminUserRow,
   AdminWithdrawalRequestRow
 } from '../types/admin';
@@ -45,6 +46,19 @@ interface ApiCreateDonationInput {
 }
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+
+/** Build optional query string for admin list endpoints */
+function adminListQuery(page?: number, pageSize?: number) {
+  const p = new URLSearchParams();
+  if (page != null) {
+    p.set('page', String(page));
+  }
+  if (pageSize != null) {
+    p.set('pageSize', String(pageSize));
+  }
+  const q = p.toString();
+  return q ? `?${q}` : '';
+}
 
 let authToken: string | null = null;
 
@@ -282,16 +296,29 @@ export const api = {
     return request<AdminDashboardStats>('/api/admin/stats');
   },
 
-  getAdminActivity() {
-    return request<AdminActivityItem[]>('/api/admin/activity');
+  getAdminActivity(params?: { page?: number; pageSize?: number }) {
+    const q = adminListQuery(params?.page, params?.pageSize);
+    return request<AdminPaged<AdminActivityItem>>(`/api/admin/activity${q}`);
   },
 
-  getAdminPendingCampaigns() {
-    return request<AdminCampaign[]>('/api/admin/campaigns/pending');
+  getAdminPendingCampaigns(params?: { page?: number; pageSize?: number }) {
+    const q = adminListQuery(params?.page, params?.pageSize);
+    return request<AdminPaged<AdminCampaign>>(`/api/admin/campaigns/pending${q}`);
   },
 
-  getAdminCampaigns() {
-    return request<AdminCampaign[]>('/api/admin/campaigns');
+  getAdminCampaigns(params?: { page?: number; pageSize?: number }) {
+    const q = adminListQuery(params?.page, params?.pageSize);
+    return request<AdminPaged<AdminCampaign>>(`/api/admin/campaigns${q}`);
+  },
+
+  getAdminUsers(params?: { page?: number; pageSize?: number }) {
+    const q = adminListQuery(params?.page, params?.pageSize);
+    return request<AdminPaged<AdminUserRow>>(`/api/admin/users${q}`);
+  },
+
+  getAdminWithdrawalRequests(params?: { page?: number; pageSize?: number }) {
+    const q = adminListQuery(params?.page, params?.pageSize);
+    return request<AdminPaged<AdminWithdrawalRequestRow>>(`/api/admin/withdrawal-requests${q}`);
   },
 
   updateAdminCampaignStatus(
@@ -307,10 +334,6 @@ export const api = {
     );
   },
 
-  getAdminUsers() {
-    return request<AdminUserRow[]>('/api/admin/users');
-  },
-
   updateAdminUserStatus(userId: string, isActive: boolean) {
     return request<{
       message: string;
@@ -319,10 +342,6 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ isActive })
     });
-  },
-
-  getAdminWithdrawalRequests() {
-    return request<AdminWithdrawalRequestRow[]>('/api/admin/withdrawal-requests');
   },
 
   updateAdminWithdrawalRequest(

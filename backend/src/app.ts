@@ -35,7 +35,7 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 app.get('/', (_req, res) => {
   res.json({
-    name: 'GambiaFund API',
+    name: 'BarakahFund API',
     status: 'ok'
   });
 });

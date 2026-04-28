@@ -23,7 +23,7 @@ async function main() {
   const adminPassword = await hashPassword('admin@123');
   const adminUser = await prisma.user.create({
     data: {
-      email: 'admin@gambiafund.com',
+      email: 'admin@barakahfund.com',
       password: adminPassword,
       fullName: 'Admin User',
       phoneNumber: '+220123456789',
@@ -42,7 +42,7 @@ async function main() {
   const userPassword = await hashPassword('user@123');
   const regularUser = await prisma.user.create({
     data: {
-      email: 'user@gambiafund.com',
+      email: 'user@barakahfund.com',
       password: userPassword,
       fullName: 'Regular User',
       phoneNumber: '+220987654321',

@@ -10,6 +10,7 @@ import {
   SparklesIcon
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { BRAND_NAME } from '../lib/brand';
 import { api } from '../lib/api';
 
 interface DonateModalProps {
@@ -267,10 +268,10 @@ export function DonateModal({
                   <div className="flex items-start gap-2">
                     <SparklesIcon className="w-5 h-5 text-brand-600 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-sm font-semibold text-surface-900">Support GambiaFund (optional)</p>
+                      <p className="text-sm font-semibold text-surface-900">Support {BRAND_NAME} (optional)</p>
                       <p className="text-xs text-surface-600 mt-0.5">
                         Add a voluntary tip for the platform. It is separate from your campaign gift and helps keep
-                        GambiaFund running.
+                        {BRAND_NAME} running.
                       </p>
                     </div>
                   </div>
@@ -554,7 +555,7 @@ export function DonateModal({
                   {platformTipAmount > 0 ? (
                     <>
                       {' '}
-                      You also added <strong>D{platformTipAmount}</strong> to support GambiaFund — thank you!
+                      You also added <strong>D{platformTipAmount}</strong> to support {BRAND_NAME} — thank you!
                     </>
                   ) : null}{' '}
                   Your support makes a real difference.

@@ -4,6 +4,7 @@ import {
   TwitterIcon,
   LinkIcon } from
 'lucide-react';
+import { BRAND_NAME } from '../lib/brand';
 
 interface ShareButtonsProps {
   url: string;
@@ -12,9 +13,9 @@ interface ShareButtonsProps {
 
 export function ShareButtons({ url, title }: ShareButtonsProps) {
   const encodedUrl = encodeURIComponent(url);
-  const shareText = encodeURIComponent(`Support ${title} on GambiaFund`);
+  const shareText = encodeURIComponent(`Support ${title} on ${BRAND_NAME}`);
   const whatsappHref = `https://wa.me/?text=${encodeURIComponent(
-    `Support ${title} on GambiaFund: ${url}`
+    `Support ${title} on ${BRAND_NAME}: ${url}`
   )}`;
   const facebookHref = `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`;
   const twitterHref = `https://twitter.com/intent/tweet?text=${shareText}&url=${encodedUrl}`;

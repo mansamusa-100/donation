@@ -83,7 +83,7 @@ export function ExplorePage() {
         <div className="mb-10 text-center max-w-2xl mx-auto">
           <h1 className="text-4xl font-display font-bold text-surface-900 mb-4">Explore Campaigns</h1>
           <p className="text-surface-600 text-lg">
-            Discover and support causes that are making a difference across The Gambia.
+            Discover campaigns and support meaningful causes wherever you find them.
           </p>
         </div>
 

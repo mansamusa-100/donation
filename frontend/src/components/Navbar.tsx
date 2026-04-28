@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { HeartHandshakeIcon, MenuIcon, XIcon, LogOutIcon, UserIcon } from 'lucide-react';
+import { MenuIcon, XIcon, LogOutIcon, UserIcon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { BRAND_LOGO_SRC, BRAND_NAME_PRIMARY } from '../lib/brand';
 
 export function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -32,12 +33,19 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-20">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 group">
-            <div className="bg-brand-600 text-white p-2 rounded-xl group-hover:bg-brand-700 transition-colors">
-              <HeartHandshakeIcon className="w-6 h-6" />
-            </div>
+          <Link to="/" className="flex items-center gap-2.5 group">
+            <img
+              src={BRAND_LOGO_SRC}
+              alt=""
+              width={40}
+              height={40}
+              className="h-10 w-10 object-contain drop-shadow-sm rounded-lg"
+              loading="eager"
+              decoding="async"
+            />
             <span className="font-display font-bold text-xl tracking-tight text-surface-900">
-              Gambia<span className="text-brand-600">Fund</span>
+              {BRAND_NAME_PRIMARY}
+              <span className="text-brand-600">Fund</span>
             </span>
           </Link>
 

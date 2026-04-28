@@ -17,9 +17,24 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const TOKEN_STORAGE_KEY = 'gambiafund_token';
+const TOKEN_STORAGE_KEY = 'barakahfund_token';
+const LEGACY_TOKEN_KEY = 'gambiafund_token';
 /** Legacy: user profile is no longer persisted; remove on load. */
-const USER_STORAGE_KEY = 'gambiafund_user';
+const USER_STORAGE_KEY_LEGACY = 'gambiafund_user';
+
+function readStoredToken(): string | null {
+  const current = localStorage.getItem(TOKEN_STORAGE_KEY);
+  if (current) {
+    return current;
+  }
+  const migrated = localStorage.getItem(LEGACY_TOKEN_KEY);
+  if (migrated) {
+    localStorage.setItem(TOKEN_STORAGE_KEY, migrated);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    return migrated;
+  }
+  return null;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -31,14 +46,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setAuthToken(null);
     localStorage.removeItem(TOKEN_STORAGE_KEY);
-    localStorage.removeItem(USER_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY_LEGACY);
   }, []);
 
   // Restore session: token only, then /api/auth/me (user stays in memory)
   useEffect(() => {
     let cancelled = false;
-    const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
-    localStorage.removeItem(USER_STORAGE_KEY);
+    const storedToken = readStoredToken();
+    localStorage.removeItem(USER_STORAGE_KEY_LEGACY);
 
     async function bootstrap() {
       if (!storedToken) {
@@ -74,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession]);
 
   const refreshUser = useCallback(async () => {
-    const t = localStorage.getItem(TOKEN_STORAGE_KEY);
+    const t = readStoredToken();
     if (!t) {
       return;
     }

@@ -1,6 +1,6 @@
-# GambiaFund
+# BarakahFund
 
-GambiaFund is a React + Vite frontend paired with a scaffolded Express + Prisma + PostgreSQL backend for a crowdfunding platform focused on causes across The Gambia.
+BarakahFund is a React + Vite frontend paired with an Express + Prisma + PostgreSQL backend for a crowdfunding and donation platform.
 
 ## Monorepo Structure
 

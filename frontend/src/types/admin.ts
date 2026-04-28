@@ -85,6 +85,13 @@ export type AdminPanelKey =
   | 'users'
   | 'admins';
 
+export interface AdminPaged<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export interface AdminAccountRow {
   id: string;
   email: string;

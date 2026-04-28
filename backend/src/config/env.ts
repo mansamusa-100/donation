@@ -8,14 +8,14 @@ const envSchema = z.object({
   JWT_SECRET: z.string().default('your-secret-key-change-in-production'),
   /** Resend API (https://resend.com) — preferred when set. */
   RESEND_API_KEY: z.string().default(''),
-  /** Must be a verified sender domain in Resend (e.g. GambiaFund <noreply@yourdomain.com>). */
+  /** Must be a verified sender domain in Resend (e.g. BarakahFund <noreply@yourdomain.com>). */
   RESEND_FROM: z.string().default(''),
   /** When set (e.g. Mailpit, Mailhog, or real SMTP), outbound email is sent if Resend is not configured. */
   SMTP_HOST: z.string().default(''),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_USER: z.string().default(''),
   SMTP_PASS: z.string().default(''),
-  MAIL_FROM: z.string().default('GambiaFund <noreply@gambiafund.local>'),
+  MAIL_FROM: z.string().default('BarakahFund <noreply@barakahfund.local>'),
   /** Wave Business Checkout — create key at https://business.wave.com/dev-portal */
   WAVE_API_KEY: z.string().default(''),
   WAVE_API_BASE_URL: z.string().url().default('https://api.wave.com'),

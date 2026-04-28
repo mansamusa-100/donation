@@ -1,11 +1,11 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-  HeartHandshakeIcon,
   FacebookIcon,
   TwitterIcon,
   InstagramIcon } from
 'lucide-react';
+import { BRAND_LOGO_SRC, BRAND_NAME, BRAND_NAME_PRIMARY } from '../lib/brand';
 
 export function Footer() {
   const { user } = useAuth();
@@ -16,15 +16,15 @@ export function Footer() {
           {/* Brand */}
           <div className="space-y-4">
             <Link to="/" className="flex items-center gap-2 text-white">
-              <HeartHandshakeIcon className="w-8 h-8 text-brand-500" />
+              <img src={BRAND_LOGO_SRC} alt="" width={40} height={40} className="h-10 w-10 object-contain" />
               <span className="font-display font-bold text-2xl tracking-tight">
-                Gambia<span className="text-brand-500">Fund</span>
+                {BRAND_NAME_PRIMARY}
+                <span className="text-brand-500">Fund</span>
               </span>
             </Link>
             <p className="text-sm leading-relaxed text-surface-400">
-              The Gambia's first dedicated crowdfunding platform. Empowering
-              communities, funding dreams, and providing relief when it matters
-              most.
+              {BRAND_NAME} is a crowdfunding platform for meaningful causes — empowering communities, funding dreams,
+              and providing relief when it matters most.
             </p>
             <div className="flex gap-4 pt-2">
               <a href="#" className="hover:text-white transition-colors">
@@ -122,8 +122,7 @@ export function Footer() {
 
         <div className="pt-8 border-t border-surface-800 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-surface-500">
           <p>
-            Made with heart in The Gambia. Copyright {new Date().getFullYear()}{' '}
-            GambiaFund.
+            © {new Date().getFullYear()} {BRAND_NAME}. All rights reserved.
           </p>
           <div className="flex gap-6">
             <a href="#" className="hover:text-white transition-colors">

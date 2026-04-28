@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import fs from 'node:fs/promises';
 import { z } from 'zod';
 import { CampaignStatus, WithdrawalRequestStatus } from '@prisma/client';
@@ -42,15 +42,45 @@ function canManageAdminsList(perms: string[]): boolean {
   return perms.length === 0 || perms.includes('admins');
 }
 
+const MAX_ADMIN_PAGE_SIZE = 50;
+
+function parsePagination(
+  query: Request['query'],
+  defaultPageSize = 12
+): {
+  page: number;
+  pageSize: number;
+  skip: number;
+} {
+  const pageRaw = Number.parseInt(typeof query.page === 'string' ? query.page : '1', 10);
+  const sizeRaw = Number.parseInt(
+    typeof query.pageSize === 'string' ? query.pageSize : String(defaultPageSize),
+    10
+  );
+  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1;
+  const pageSizeRaw = Number.isFinite(sizeRaw) ? Math.max(1, sizeRaw) : defaultPageSize;
+  const pageSize = Math.min(MAX_ADMIN_PAGE_SIZE, pageSizeRaw);
+  return {
+    page,
+    pageSize,
+    skip: (page - 1) * pageSize
+  };
+}
+
 adminRouter.get(
   '/activity',
   requireAdminPanel('overview'),
-  asyncHandler(async (_req, res) => {
-    const items = await prisma.activityLog.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 80
-    });
-    res.json(items);
+  asyncHandler(async (req: Request, res) => {
+    const { page, pageSize, skip } = parsePagination(req.query, 10);
+    const [total, items] = await Promise.all([
+      prisma.activityLog.count(),
+      prisma.activityLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: pageSize
+      })
+    ]);
+    res.json({ items, total, page, pageSize });
   })
 );
 
@@ -67,28 +97,35 @@ const patchWithdrawalRequestSchema = z.object({
 adminRouter.get(
   '/campaigns/pending',
   requireAdminPanel('queue'),
-  asyncHandler(async (_req, res) => {
-    const campaigns = await prisma.campaign.findMany({
-      where: {
-        status: 'PendingReview'
-      },
-      include: {
-        donations: true,
-        creator: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-            phoneNumber: true
+  asyncHandler(async (req: Request, res) => {
+    const { page, pageSize, skip } = parsePagination(req.query);
+    const where = {
+      status: 'PendingReview' as const
+    };
+    const [total, campaigns] = await Promise.all([
+      prisma.campaign.count({ where }),
+      prisma.campaign.findMany({
+        where,
+        include: {
+          donations: true,
+          creator: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              phoneNumber: true
+            }
           }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        skip,
+        take: pageSize
+      })
+    ]);
 
-    res.json(campaigns);
+    res.json({ items: campaigns, total, page, pageSize });
   })
 );
 
@@ -96,24 +133,30 @@ adminRouter.get(
 adminRouter.get(
   '/campaigns',
   requireAdminPanel('campaigns'),
-  asyncHandler(async (_req, res) => {
-    const campaigns = await prisma.campaign.findMany({
-      include: {
-        donations: true,
-        creator: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true
+  asyncHandler(async (req: Request, res) => {
+    const { page, pageSize, skip } = parsePagination(req.query);
+    const [total, campaigns] = await Promise.all([
+      prisma.campaign.count(),
+      prisma.campaign.findMany({
+        include: {
+          donations: true,
+          creator: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true
+            }
           }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        skip,
+        take: pageSize
+      })
+    ]);
 
-    res.json(campaigns);
+    res.json({ items: campaigns, total, page, pageSize });
   })
 );
 
@@ -217,27 +260,32 @@ adminRouter.patch(
 adminRouter.get(
   '/withdrawal-requests',
   requireAdminPanel('withdrawals'),
-  asyncHandler(async (_req, res) => {
-    const list = await prisma.withdrawalRequest.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 150,
-      include: {
-        campaign: {
-          select: {
-            id: true,
-            title: true,
-            slug: true,
-            raisedAmount: true,
-            status: true
+  asyncHandler(async (req: Request, res) => {
+    const { page, pageSize, skip } = parsePagination(req.query);
+    const [total, list] = await Promise.all([
+      prisma.withdrawalRequest.count(),
+      prisma.withdrawalRequest.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: pageSize,
+        include: {
+          campaign: {
+            select: {
+              id: true,
+              title: true,
+              slug: true,
+              raisedAmount: true,
+              status: true
+            }
+          },
+          user: {
+            select: { id: true, fullName: true, email: true, phoneNumber: true }
           }
-        },
-        user: {
-          select: { id: true, fullName: true, email: true, phoneNumber: true }
         }
-      }
-    });
+      })
+    ]);
 
-    res.json(list);
+    res.json({ items: list, total, page, pageSize });
   })
 );
 
@@ -332,29 +380,35 @@ adminRouter.patch(
 adminRouter.get(
   '/users',
   requireAdminPanel('users'),
-  asyncHandler(async (_req, res) => {
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        phoneNumber: true,
-        role: true,
-        isActive: true,
-        createdAt: true,
-        _count: {
-          select: {
-            campaigns: true,
-            donations: true
+  asyncHandler(async (req: Request, res) => {
+    const { page, pageSize, skip } = parsePagination(req.query);
+    const [total, users] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.findMany({
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+          phoneNumber: true,
+          role: true,
+          isActive: true,
+          createdAt: true,
+          _count: {
+            select: {
+              campaigns: true,
+              donations: true
+            }
           }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        skip,
+        take: pageSize
+      })
+    ]);
 
-    res.json(users);
+    res.json({ items: users, total, page, pageSize });
   })
 );
 

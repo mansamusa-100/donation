@@ -3,5 +3,5 @@ import { env } from './config/env.js';
 import { app } from './app.js';
 
 app.listen(env.PORT, () => {
-  console.log(`GambiaFund API listening on http://localhost:${env.PORT}`);
+  console.log(`BarakahFund API listening on http://localhost:${env.PORT}`);
 });

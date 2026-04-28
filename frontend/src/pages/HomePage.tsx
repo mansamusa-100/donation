@@ -15,6 +15,7 @@ import type { Campaign, CategorySummary, PlatformStats } from '../types/campaign
 import { CATEGORY_ICON_BY_NAME } from '../lib/categoryIcons';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { BRAND_NAME } from '../lib/brand';
 
 const emptyStats: PlatformStats = {
   totalRaised: 0,
@@ -86,11 +87,11 @@ export function HomePage() {
             transition={{ duration: 0.6 }}
             className="max-w-3xl mx-auto">
             <span className="inline-block py-1 px-3 rounded-full bg-brand-100 text-brand-700 text-sm font-bold mb-6">
-              The Gambia&apos;s First Crowdfunding Platform
+              Crowdfunding with purpose
             </span>
             <h1 className="text-5xl md:text-6xl font-display font-extrabold text-surface-900 tracking-tight mb-6 text-balance">
-              Empower The Gambia, <br />
-              <span className="text-brand-600">One Campaign at a Time</span>
+              Give with heart, <br />
+              <span className="text-brand-600">support real impact</span>
             </h1>
             <p className="text-lg md:text-xl text-surface-600 mb-10 text-balance">
               Raise funds for medical emergencies, education, local businesses, and community projects.
@@ -250,7 +251,7 @@ export function HomePage() {
       <section id="how-it-works" className="py-24 bg-surface-900 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-display font-bold mb-4">How GambiaFund Works</h2>
+            <h2 className="text-3xl font-display font-bold mb-4">How {BRAND_NAME} works</h2>
             <p className="text-surface-400 max-w-2xl mx-auto">Raising funds is simple, secure, and transparent.</p>
           </div>
 

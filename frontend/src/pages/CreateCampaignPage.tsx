@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
+import { BRAND_NAME } from '../lib/brand';
 import { mediaUrl } from '../lib/mediaUrl';
 import type { Category } from '../types/campaign';
 
@@ -163,7 +164,7 @@ export function CreateCampaignPage() {
     const fullDescription =
       desc.length >= 40
         ? desc
-        : `${desc}\n\nThis campaign is raising funds transparently through GambiaFund.`;
+        : `${desc}\n\nThis campaign is raising funds transparently through ${BRAND_NAME}.`;
 
     const end = new Date(formData.deadline);
     const startOfEnd = new Date(end);
