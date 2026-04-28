@@ -21,6 +21,7 @@
     "start:backend": "npm --workspace=backend run start",
     "prisma:generate": "npm --workspace=backend run prisma:generate",
     "prisma:migrate": "npm --workspace=backend run prisma:migrate",
+    "prisma:migrate:deploy": "npm --workspace=backend run prisma:migrate:deploy",
     "seed": "npm --workspace=backend run seed"
   },
   "devDependencies": {
