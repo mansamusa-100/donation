@@ -69,9 +69,9 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <a href="#" className="hover:text-brand-400 transition-colors">
+                <Link to="/pricing" className="hover:text-brand-400 transition-colors">
                   Pricing & Fees
-                </a>
+                </Link>
               </li>
             </ul>
           </div>
@@ -80,19 +80,19 @@ export function Footer() {
             <h4 className="text-white font-display font-bold mb-4">Support</h4>
             <ul className="space-y-3 text-sm">
               <li>
-                <a href="#" className="hover:text-brand-400 transition-colors">
+                <Link to="/help" className="hover:text-brand-400 transition-colors">
                   Help Center
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="#" className="hover:text-brand-400 transition-colors">
+                <Link to="/trust" className="hover:text-brand-400 transition-colors">
                   Trust & Safety
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="#" className="hover:text-brand-400 transition-colors">
+                <Link to="/contact" className="hover:text-brand-400 transition-colors">
                   Contact Us
-                </a>
+                </Link>
               </li>
             </ul>
           </div>
@@ -125,12 +125,12 @@ export function Footer() {
             © {new Date().getFullYear()} {BRAND_NAME}. All rights reserved.
           </p>
           <div className="flex gap-6">
-            <a href="#" className="hover:text-white transition-colors">
+            <Link to="/terms" className="hover:text-white transition-colors">
               Terms
-            </a>
-            <a href="#" className="hover:text-white transition-colors">
+            </Link>
+            <Link to="/privacy" className="hover:text-white transition-colors">
               Privacy
-            </a>
+            </Link>
           </div>
         </div>
       </div>

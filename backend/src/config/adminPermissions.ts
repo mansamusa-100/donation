@@ -5,7 +5,8 @@ export const ADMIN_PANEL_KEYS = [
   'campaigns',
   'withdrawals',
   'users',
-  'admins'
+  'admins',
+  'audit'
 ] as const;
 
 export type AdminPanelKey = (typeof ADMIN_PANEL_KEYS)[number];

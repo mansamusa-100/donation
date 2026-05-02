@@ -1,7 +1,7 @@
 import { Router, type Request } from 'express';
 import fs from 'node:fs/promises';
 import { z } from 'zod';
-import { CampaignStatus, WithdrawalRequestStatus } from '@prisma/client';
+import { CampaignStatus, Prisma, WithdrawalRequestStatus } from '@prisma/client';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { prisma } from '../lib/prisma.js';
 import { uploadsFsPathFromPublicUrl } from '../lib/uploadPaths.js';
@@ -43,6 +43,57 @@ function canManageAdminsList(perms: string[]): boolean {
 }
 
 const MAX_ADMIN_PAGE_SIZE = 50;
+const AUDIT_EXPORT_MAX_ROWS = 2000;
+
+function parseAuditFilters(query: Request['query']): {
+  where: Prisma.ActivityLogWhereInput;
+} {
+  const conditions: Prisma.ActivityLogWhereInput[] = [];
+
+  const typeRaw = typeof query.type === 'string' ? query.type.trim() : '';
+  if (typeRaw) {
+    conditions.push({ type: typeRaw });
+  }
+
+  const fromRaw = typeof query.from === 'string' ? query.from.trim() : '';
+  if (fromRaw) {
+    const from = new Date(fromRaw);
+    if (!Number.isNaN(from.getTime())) {
+      conditions.push({ createdAt: { gte: from } });
+    }
+  }
+
+  const toRaw = typeof query.to === 'string' ? query.to.trim() : '';
+  if (toRaw) {
+    const to = new Date(toRaw);
+    if (!Number.isNaN(to.getTime())) {
+      const end = new Date(to);
+      end.setUTCHours(23, 59, 59, 999);
+      conditions.push({ createdAt: { lte: end } });
+    }
+  }
+
+  const qRaw = typeof query.q === 'string' ? query.q.trim() : '';
+  if (qRaw) {
+    conditions.push({
+      OR: [
+        { title: { contains: qRaw, mode: 'insensitive' } },
+        { detail: { contains: qRaw, mode: 'insensitive' } }
+      ]
+    });
+  }
+
+  return {
+    where: conditions.length ? { AND: conditions } : {}
+  };
+}
+
+function csvEscape(value: string): string {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
 
 function parsePagination(
   query: Request['query'],
@@ -66,6 +117,109 @@ function parsePagination(
     skip: (page - 1) * pageSize
   };
 }
+
+adminRouter.get(
+  '/audit/export.csv',
+  requireAdminPanel('audit'),
+  asyncHandler(async (req: Request, res) => {
+    const { where } = parseAuditFilters(req.query);
+    const rows = await prisma.activityLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: AUDIT_EXPORT_MAX_ROWS
+    });
+    const actorIds = [...new Set(rows.map((r) => r.actorId).filter((id): id is string => id != null))];
+    const actors =
+      actorIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: actorIds } },
+            select: { id: true, email: true, fullName: true }
+          })
+        : [];
+    const actorMap = new Map(actors.map((u) => [u.id, u]));
+
+    const header = [
+      'createdAt',
+      'type',
+      'title',
+      'detail',
+      'actorEmail',
+      'actorFullName',
+      'campaignId',
+      'userId',
+      'actorId'
+    ];
+    const lines = [
+      header.join(','),
+      ...rows.map((r) => {
+        const a = r.actorId ? actorMap.get(r.actorId) : undefined;
+        return [
+          csvEscape(r.createdAt.toISOString()),
+          csvEscape(r.type),
+          csvEscape(r.title),
+          csvEscape(r.detail ?? ''),
+          csvEscape(a?.email ?? ''),
+          csvEscape(a?.fullName ?? ''),
+          csvEscape(r.campaignId ?? ''),
+          csvEscape(r.userId ?? ''),
+          csvEscape(r.actorId ?? '')
+        ].join(',');
+      })
+    ];
+    const body = '\uFEFF' + lines.join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="admin-audit-log.csv"');
+    res.send(body);
+  })
+);
+
+adminRouter.get(
+  '/audit',
+  requireAdminPanel('audit'),
+  asyncHandler(async (req: Request, res) => {
+    const { page, pageSize, skip } = parsePagination(req.query, 25);
+    const { where } = parseAuditFilters(req.query);
+    const [total, items] = await Promise.all([
+      prisma.activityLog.count({ where }),
+      prisma.activityLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: pageSize
+      })
+    ]);
+    const actorIds = [...new Set(items.map((r) => r.actorId).filter((id): id is string => id != null))];
+    const actors =
+      actorIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: actorIds } },
+            select: { id: true, email: true, fullName: true }
+          })
+        : [];
+    const actorMap = new Map(actors.map((u) => [u.id, u]));
+    res.json({
+      items: items.map((row) => ({
+        id: row.id,
+        type: row.type,
+        title: row.title,
+        detail: row.detail,
+        campaignId: row.campaignId,
+        userId: row.userId,
+        actorId: row.actorId,
+        createdAt: row.createdAt.toISOString(),
+        actor: row.actorId
+          ? (() => {
+              const a = actorMap.get(row.actorId);
+              return a ? { id: a.id, email: a.email, fullName: a.fullName } : null;
+            })()
+          : null
+      })),
+      total,
+      page,
+      pageSize
+    });
+  })
+);
 
 adminRouter.get(
   '/activity',

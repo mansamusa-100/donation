@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import {
   WalletIcon,
   TrendingUpIcon,
@@ -7,7 +7,10 @@ import {
   PlusIcon,
   ArrowRightIcon,
   HeartIcon,
-  BanknoteIcon
+  BanknoteIcon,
+  CheckCircle2Icon,
+  PartyPopperIcon,
+  XIcon
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
@@ -51,14 +54,39 @@ function statusBadgeClass(status: CampaignStatus | undefined) {
   }
 }
 
+type CampaignSubmissionCelebration = {
+  title: string;
+  slug: string;
+};
+
 export function DashboardPage() {
   const { user, isLoading: authLoading, isAuthenticated } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [data, setData] = useState<CreatorDashboardOverview | null>(null);
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [withdrawalBusySlug, setWithdrawalBusySlug] = useState<string | null>(null);
   const [withdrawalFormError, setWithdrawalFormError] = useState('');
+  const [celebration, setCelebration] = useState<CampaignSubmissionCelebration | null>(null);
+
+  useEffect(() => {
+    const state = location.state as
+      | {
+          campaignSubmitted?: boolean;
+          submittedTitle?: string;
+          submittedSlug?: string;
+        }
+      | undefined;
+    if (!state?.campaignSubmitted || !state.submittedTitle) {
+      return;
+    }
+    setCelebration({
+      title: state.submittedTitle,
+      slug: state.submittedSlug ?? ''
+    });
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.state, location.pathname, navigate]);
 
   const load = useCallback(async () => {
     setLoadState('loading');
@@ -137,6 +165,36 @@ export function DashboardPage() {
         {loadState === 'error' && (
           <div className="mb-6">
             <DataLoadAlert message={errorMessage} onRetry={() => void load()} />
+          </div>
+        )}
+
+        {celebration && (
+          <div className="mb-6 rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-5 sm:p-6 shadow-sm relative overflow-hidden">
+            <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-emerald-200/40 pointer-events-none" />
+            <button
+              type="button"
+              onClick={() => setCelebration(null)}
+              className="absolute top-3 right-3 p-2 rounded-lg text-surface-500 hover:bg-white/80 hover:text-surface-800"
+              aria-label="Dismiss">
+              <XIcon className="w-5 h-5" />
+            </button>
+            <div className="flex flex-col sm:flex-row sm:items-start gap-4 pr-10">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-md">
+                <PartyPopperIcon className="w-6 h-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <CheckCircle2Icon className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <h2 className="text-lg font-display font-bold text-surface-900">Campaign submitted successfully</h2>
+                </div>
+                <p className="text-surface-700 font-medium">&ldquo;{celebration.title}&rdquo; is in the review queue.</p>
+                <p className="text-sm text-surface-600 mt-2 max-w-2xl">
+                  Our team will verify your details. You&rsquo;ll get an email when the campaign goes live on the public
+                  site. Until then, track status and manage your work from this dashboard — your campaign shows as{' '}
+                  <span className="font-semibold text-amber-800">Pending review</span>.
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -422,8 +480,13 @@ function CampaignRow({
             <Link
               to={`/campaign/${campaign.slug}`}
               className="px-4 py-2 border border-surface-200 rounded-lg text-sm font-semibold text-center hover:bg-surface-50">
-              View page
+              View public page
             </Link>
+          )}
+          {(status === 'PendingReview' || status === 'Draft') && (
+            <span className="px-4 py-2 rounded-lg text-xs font-semibold text-center text-amber-800 bg-amber-50 border border-amber-100">
+              Public page opens after approval
+            </span>
           )}
         </div>
       </div>

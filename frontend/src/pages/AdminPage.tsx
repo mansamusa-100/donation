@@ -7,6 +7,7 @@ import {
   HistoryIcon,
   LayoutDashboardIcon,
   Menu,
+  ScrollTextIcon,
   ShieldAlertIcon,
   UserCog,
   UsersIcon,
@@ -16,16 +17,18 @@ import { useAuth } from '../context/AuthContext';
 import { BRAND_LOGO_SRC, BRAND_NAME } from '../lib/brand';
 import { api } from '../lib/api';
 import { mediaUrl } from '../lib/mediaUrl';
-import type {
-  AdminAccountRow,
-  AdminActivityItem,
-  AdminCampaign,
-  AdminCampaignStatus,
-  AdminDashboardStats,
-  AdminPanelKey,
-  AdminUserRow,
-  AdminWithdrawalRequestRow,
-  AdminWithdrawalStatus
+import {
+  AUDIT_EVENT_TYPES,
+  type AdminAccountRow,
+  type AdminActivityItem,
+  type AdminAuditLogItem,
+  type AdminCampaign,
+  type AdminCampaignStatus,
+  type AdminDashboardStats,
+  type AdminPanelKey,
+  type AdminUserRow,
+  type AdminWithdrawalRequestRow,
+  type AdminWithdrawalStatus
 } from '../types/admin';
 
 type AdminTab = AdminPanelKey;
@@ -78,6 +81,10 @@ function activityTypeLabel(type: string) {
       return 'Withdrawal';
     case 'WITHDRAWAL_STATUS_CHANGED':
       return 'Withdrawal';
+    case 'ADMIN_ACCOUNT_CREATED':
+      return 'Admin created';
+    case 'ADMIN_PERMISSIONS_CHANGED':
+      return 'Admin permissions';
     default:
       return type;
   }
@@ -104,7 +111,8 @@ const PANEL_KEY_LABEL: Record<AdminPanelKey, string> = {
   campaigns: 'All campaigns',
   withdrawals: 'Withdrawals',
   users: 'Users (activate/deactivate)',
-  admins: 'Admins (create + permissions)'
+  admins: 'Admins (create + permissions)',
+  audit: 'Audit log (reporting)'
 };
 
 const ALL_PANEL_KEYS = Object.keys(PANEL_KEY_LABEL) as AdminPanelKey[];
@@ -129,11 +137,13 @@ const NAV_DEF: { id: AdminTab; label: string; icon: typeof LayoutDashboardIcon }
   { id: 'campaigns', label: 'All campaigns', icon: ShieldAlertIcon },
   { id: 'withdrawals', label: 'Withdrawals', icon: BanknoteIcon },
   { id: 'users', label: 'Users', icon: UsersIcon },
-  { id: 'admins', label: 'Admins', icon: UserCog }
+  { id: 'admins', label: 'Admins', icon: UserCog },
+  { id: 'audit', label: 'Audit log', icon: ScrollTextIcon }
 ];
 
 const ACTIVITY_PAGE_SIZE = 10;
 const ADMIN_TABLE_PAGE_SIZE = 12;
+const AUDIT_PAGE_SIZE = 25;
 
 function AdminPaginator({
   page,
@@ -247,6 +257,18 @@ export function AdminPage() {
   const [editing, setEditing] = useState<Record<string, { full: boolean; keys: AdminPanelKey[] }>>({});
   const [newAdminSubmitting, setNewAdminSubmitting] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  const [auditItems, setAuditItems] = useState<AdminAuditLogItem[]>([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditType, setAuditType] = useState('');
+  const [auditFrom, setAuditFrom] = useState('');
+  const [auditTo, setAuditTo] = useState('');
+  const [auditSearchInput, setAuditSearchInput] = useState('');
+  const [auditQ, setAuditQ] = useState('');
+  const [auditLoadError, setAuditLoadError] = useState('');
+  const [auditExportBusy, setAuditExportBusy] = useState(false);
+  const [auditExportError, setAuditExportError] = useState('');
 
   const [activityPage, setActivityPage] = useState(1);
   const [activityTotal, setActivityTotal] = useState(0);
@@ -363,6 +385,34 @@ export function AdminPage() {
     usersPage
   ]);
 
+  const loadAudit = useCallback(async () => {
+    if (user?.role !== 'ADMIN') {
+      return;
+    }
+    const p = user.adminPanelPermissions;
+    const full = p == null || p.length === 0;
+    if (!full && !p.includes('audit')) {
+      return;
+    }
+    setAuditLoadError('');
+    try {
+      const r = await api.getAdminAudit({
+        page: auditPage,
+        pageSize: AUDIT_PAGE_SIZE,
+        type: auditType || undefined,
+        from: auditFrom || undefined,
+        to: auditTo || undefined,
+        q: auditQ || undefined
+      });
+      setAuditItems(r.items);
+      setAuditTotal(r.total);
+    } catch (err) {
+      setAuditItems([]);
+      setAuditTotal(0);
+      setAuditLoadError(err instanceof Error ? err.message : 'Failed to load audit log');
+    }
+  }, [user, auditPage, auditType, auditFrom, auditTo, auditQ]);
+
   const navItems = useMemo(
     () => NAV_DEF.filter((n) => canAccess(n.id)),
     [canAccess]
@@ -381,6 +431,27 @@ export function AdminPage() {
       setTab(navItems[0].id);
     }
   }, [allowedTabIds, navItems, tab]);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setAuditQ(auditSearchInput.trim()), 400);
+    return () => window.clearTimeout(id);
+  }, [auditSearchInput]);
+
+  useEffect(() => {
+    setAuditPage(1);
+  }, [auditType, auditFrom, auditTo, auditQ]);
+
+  useEffect(() => {
+    if (user?.role !== 'ADMIN' || tab !== 'audit') {
+      return;
+    }
+    const p = user.adminPanelPermissions;
+    const full = p == null || p.length === 0;
+    if (!full && !p.includes('audit')) {
+      return;
+    }
+    void loadAudit();
+  }, [user?.role, user?.adminPanelPermissions, tab, loadAudit]);
 
   useEffect(() => {
     if (mobileNavOpen) {
@@ -566,6 +637,32 @@ export function AdminPage() {
     setMobileNavOpen(false);
   };
 
+  const handleExportAuditCsv = async () => {
+    setAuditExportError('');
+    setAuditExportBusy(true);
+    try {
+      const blob = await api.exportAdminAuditCsv({
+        type: auditType || undefined,
+        from: auditFrom || undefined,
+        to: auditTo || undefined,
+        q: auditQ || undefined
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'admin-audit-log.csv';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      setAuditExportError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setAuditExportBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row text-slate-900">
       <header
@@ -704,6 +801,8 @@ export function AdminPage() {
                 'Review organizer payout requests. Approve before sending funds; mark Paid when completed.'}
               {tab === 'users' && 'Activate or deactivate organizer and admin accounts.'}
               {tab === 'admins' && 'Create additional admins and choose which areas of the panel they may use. Empty permission list = full access.'}
+              {tab === 'audit' &&
+                'Filter and export the activity ledger: campaign reviews, withdrawals, user activation, and admin account changes.'}
             </p>
           </header>
 
@@ -1349,6 +1448,157 @@ export function AdminPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {tab === 'audit' && canAccess('audit') && (
+            <div className="space-y-4">
+              {auditLoadError && (
+                <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm font-medium">
+                  {auditLoadError}
+                </div>
+              )}
+              {auditExportError && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-sm font-medium">
+                  {auditExportError}
+                </div>
+              )}
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 flex-1 min-w-0">
+                  <div className="sm:col-span-2 xl:col-span-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="audit-type">
+                      Event type
+                    </label>
+                    <select
+                      id="audit-type"
+                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                      value={auditType}
+                      onChange={(e) => setAuditType(e.target.value)}>
+                      <option value="">All types</option>
+                      {AUDIT_EVENT_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {activityTypeLabel(t)} ({t})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="audit-from">
+                      From
+                    </label>
+                    <input
+                      id="audit-from"
+                      type="date"
+                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                      value={auditFrom}
+                      onChange={(e) => setAuditFrom(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="audit-to">
+                      To
+                    </label>
+                    <input
+                      id="audit-to"
+                      type="date"
+                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                      value={auditTo}
+                      onChange={(e) => setAuditTo(e.target.value)}
+                    />
+                  </div>
+                  <div className="sm:col-span-2 xl:col-span-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="audit-search">
+                      Search title / detail
+                    </label>
+                    <input
+                      id="audit-search"
+                      type="search"
+                      placeholder="Keyword…"
+                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+                      value={auditSearchInput}
+                      onChange={(e) => setAuditSearchInput(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    disabled={auditExportBusy}
+                    onClick={() => void handleExportAuditCsv()}
+                    className="px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50 whitespace-nowrap">
+                    {auditExportBusy ? 'Exporting…' : 'Export CSV'}
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500">
+                Exports include up to 2,000 rows matching the current filters. The file is UTF‑8 with a BOM for Excel.
+              </p>
+
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-slate-500 font-semibold bg-slate-50">
+                        <th className="px-4 py-3 whitespace-nowrap">When</th>
+                        <th className="px-4 py-3 whitespace-nowrap">Type</th>
+                        <th className="px-4 py-3 min-w-[200px]">Title</th>
+                        <th className="px-4 py-3 min-w-[220px]">Detail</th>
+                        <th className="px-4 py-3 min-w-[160px]">Actor</th>
+                        <th className="px-4 py-3 text-xs font-semibold text-slate-400">Refs</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-8 text-slate-500 text-center">
+                            No audit entries match these filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        auditItems.map((row) => (
+                          <tr key={row.id} className="border-b border-slate-100 last:border-0 align-top">
+                            <td className="px-4 py-3 text-slate-600 whitespace-nowrap text-xs">
+                              {formatDateTime(row.createdAt)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-slate-200 text-slate-700">
+                                {activityTypeLabel(row.type)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-medium text-slate-900">{row.title}</td>
+                            <td className="px-4 py-3 text-slate-600 text-xs whitespace-pre-wrap max-w-md">
+                              {row.detail ?? '—'}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700 text-xs">
+                              {row.actor ? (
+                                <>
+                                  <div className="font-semibold text-slate-900">{row.actor.fullName}</div>
+                                  <div className="text-slate-500">{row.actor.email}</div>
+                                </>
+                              ) : row.actorId ? (
+                                <span className="text-slate-400">User removed ({row.actorId.slice(0, 8)}…)</span>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-[10px] text-slate-400 font-mono leading-relaxed">
+                              {row.campaignId && <div>cmp {row.campaignId.slice(0, 8)}…</div>}
+                              {row.userId && <div>usr {row.userId.slice(0, 8)}…</div>}
+                              {!row.campaignId && !row.userId && '—'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <AdminPaginator
+                  page={auditPage}
+                  pageSize={AUDIT_PAGE_SIZE}
+                  total={auditTotal}
+                  onPageChange={setAuditPage}
+                />
               </div>
             </div>
           )}

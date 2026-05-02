@@ -83,7 +83,23 @@ export type AdminPanelKey =
   | 'campaigns'
   | 'withdrawals'
   | 'users'
-  | 'admins';
+  | 'admins'
+  | 'audit';
+
+/** Known event types stored in ActivityLog (extend as you add recordActivity calls). */
+export const AUDIT_EVENT_TYPES = [
+  'CAMPAIGN_SUBMITTED',
+  'CAMPAIGN_STATUS_CHANGED',
+  'USER_STATUS_CHANGED',
+  'WITHDRAWAL_REQUESTED',
+  'WITHDRAWAL_STATUS_CHANGED',
+  'ADMIN_ACCOUNT_CREATED',
+  'ADMIN_PERMISSIONS_CHANGED'
+] as const;
+
+export interface AdminAuditLogItem extends AdminActivityItem {
+  actor: { id: string; email: string; fullName: string } | null;
+}
 
 export interface AdminPaged<T> {
   items: T[];

@@ -4,7 +4,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-  CLIENT_ORIGIN: z.string().default('http://localhost:5173'),
+  CLIENT_ORIGIN: z.string().default('https://app.barakahfund.site'),
   JWT_SECRET: z.string().default('your-secret-key-change-in-production'),
   /** Resend API (https://resend.com) — preferred when set. */
   RESEND_API_KEY: z.string().default(''),

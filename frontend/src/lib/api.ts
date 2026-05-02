@@ -9,6 +9,7 @@ import type {
 import type {
   AdminAccountRow,
   AdminActivityItem,
+  AdminAuditLogItem,
   AdminCampaign,
   AdminDashboardStats,
   AdminPaged,
@@ -55,6 +56,37 @@ function adminListQuery(page?: number, pageSize?: number) {
   }
   if (pageSize != null) {
     p.set('pageSize', String(pageSize));
+  }
+  const q = p.toString();
+  return q ? `?${q}` : '';
+}
+
+function adminAuditQuery(params: {
+  page?: number;
+  pageSize?: number;
+  type?: string;
+  from?: string;
+  to?: string;
+  q?: string;
+}) {
+  const p = new URLSearchParams();
+  if (params.page != null) {
+    p.set('page', String(params.page));
+  }
+  if (params.pageSize != null) {
+    p.set('pageSize', String(params.pageSize));
+  }
+  if (params.type) {
+    p.set('type', params.type);
+  }
+  if (params.from) {
+    p.set('from', params.from);
+  }
+  if (params.to) {
+    p.set('to', params.to);
+  }
+  if (params.q) {
+    p.set('q', params.q);
   }
   const q = p.toString();
   return q ? `?${q}` : '';
@@ -299,6 +331,35 @@ export const api = {
   getAdminActivity(params?: { page?: number; pageSize?: number }) {
     const q = adminListQuery(params?.page, params?.pageSize);
     return request<AdminPaged<AdminActivityItem>>(`/api/admin/activity${q}`);
+  },
+
+  getAdminAudit(params?: {
+    page?: number;
+    pageSize?: number;
+    type?: string;
+    from?: string;
+    to?: string;
+    q?: string;
+  }) {
+    const q = adminAuditQuery({
+      page: params?.page,
+      pageSize: params?.pageSize,
+      type: params?.type,
+      from: params?.from,
+      to: params?.to,
+      q: params?.q
+    });
+    return request<AdminPaged<AdminAuditLogItem>>(`/api/admin/audit${q}`);
+  },
+
+  exportAdminAuditCsv(params?: { type?: string; from?: string; to?: string; q?: string }) {
+    const q = adminAuditQuery({
+      type: params?.type,
+      from: params?.from,
+      to: params?.to,
+      q: params?.q
+    });
+    return requestBlob(`/api/admin/audit/export.csv${q}`);
   },
 
   getAdminPendingCampaigns(params?: { page?: number; pageSize?: number }) {

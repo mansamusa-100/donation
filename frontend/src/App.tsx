@@ -47,6 +47,30 @@ const PaymentWaveReturnPage = lazy(async () => ({
   default: (await import('./pages/PaymentWaveReturnPage')).PaymentWaveReturnPage
 }));
 
+const PricingFeesPage = lazy(async () => ({
+  default: (await import('./pages/PricingFeesPage')).PricingFeesPage
+}));
+
+const HelpCenterPage = lazy(async () => ({
+  default: (await import('./pages/HelpCenterPage')).HelpCenterPage
+}));
+
+const TrustSafetyPage = lazy(async () => ({
+  default: (await import('./pages/TrustSafetyPage')).TrustSafetyPage
+}));
+
+const ContactPage = lazy(async () => ({
+  default: (await import('./pages/ContactPage')).ContactPage
+}));
+
+const TermsOfServicePage = lazy(async () => ({
+  default: (await import('./pages/TermsOfServicePage')).TermsOfServicePage
+}));
+
+const PrivacyPolicyPage = lazy(async () => ({
+  default: (await import('./pages/PrivacyPolicyPage')).PrivacyPolicyPage
+}));
+
 function ScrollManager() {
   const { pathname, hash } = useLocation();
 
@@ -92,6 +116,12 @@ function AppChrome() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/payment/wave/return" element={<PaymentWaveReturnPage />} />
+            <Route path="/pricing" element={<PricingFeesPage />} />
+            <Route path="/help" element={<HelpCenterPage />} />
+            <Route path="/trust" element={<TrustSafetyPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/terms" element={<TermsOfServicePage />} />
+            <Route path="/privacy" element={<PrivacyPolicyPage />} />
           </Routes>
         </Suspense>
       </main>

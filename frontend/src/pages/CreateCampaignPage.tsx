@@ -273,7 +273,14 @@ export function CreateCampaignPage() {
         termsAcceptedAt: new Date().toISOString()
       });
 
-      navigate(`/campaign/${campaign.slug}`);
+      navigate('/dashboard', {
+        replace: true,
+        state: {
+          campaignSubmitted: true,
+          submittedTitle: campaign.title,
+          submittedSlug: campaign.slug
+        }
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create campaign');
     } finally {
