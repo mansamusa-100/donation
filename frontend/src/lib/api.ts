@@ -259,6 +259,7 @@ export const api = {
 
   getPaymentProviders() {
     return request<{
+      easypayCheckout?: boolean;
       providers: Array<{
         id: 'wave' | 'aps' | 'yonna';
         label: string;
@@ -266,6 +267,82 @@ export const api = {
         checkoutLive: boolean;
       }>;
     }>('/api/payments/providers');
+  },
+
+  easypayPartnerCheckout(
+    payload: {
+      campaignSlug: string;
+      amount: number;
+      platformTipAmount?: number;
+      currency?: 'GMD' | 'USD';
+      donorName?: string;
+      message?: string;
+      isAnonymous?: boolean;
+      avatarUrl?: string;
+      channel: 'wave' | 'yonna' | 'aps';
+      payerPhone?: string;
+    }
+  ) {
+    return request<
+      | {
+          kind: 'redirect';
+          partnerExternalBookingId: string;
+          easypayOrderId: string;
+          launchUrl: string;
+          qrPayload: string;
+          checkoutAdapter: string;
+          campaignDonationAmount: number;
+          platformTipAmount: number;
+          chargeTotal: number;
+        }
+      | {
+          kind: 'aps';
+          partnerExternalBookingId: string;
+          easypayOrderId: string;
+          gatewayCode: string;
+          campaignDonationAmount: number;
+          platformTipAmount: number;
+          chargeTotal: number;
+        }
+    >('/api/payments/easypay/checkout', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  getEasypayPaymentStatus(partnerExternalBookingId: string) {
+    return request<{
+      status: 'succeeded' | 'pending';
+      campaign: Campaign | null;
+      campaignDonationAmount: number;
+      platformTipAmount: number;
+      chargeTotal: number;
+    }>(
+      `/api/payments/easypay/status/${encodeURIComponent(partnerExternalBookingId)}`
+    );
+  },
+
+  easypayApsAuthorize(payload: { partnerExternalBookingId: string; payerMobile: string }) {
+    return request<{
+      gatewayCode: string;
+      authState: string;
+      requiresOtp: boolean;
+    }>('/api/payments/easypay/aps/authorize', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  easypayApsComplete(payload: {
+    partnerExternalBookingId: string;
+    gatewayCode: string;
+    authState: string;
+    otp?: string;
+  }) {
+    return request<{ data: Record<string, unknown> }>('/api/payments/easypay/aps/complete', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
   },
 
   createWaveCheckoutSession(payload: {

@@ -17,6 +17,10 @@ import {
 import { recordActivity } from '../lib/activityLog.js';
 import { notifyCreatorCampaignDecision, notifyCreatorWithdrawalStatus } from '../lib/mail.js';
 import { assertCanAssignPermissions } from '../config/adminPermissions.js';
+import {
+  getEasypayPartnerApiCredentialsOk,
+  provisionEasypayTenant
+} from '../lib/easypayPartner.js';
 
 const adminRouter = Router();
 
@@ -810,6 +814,59 @@ adminRouter.patch(
     });
 
     res.json(updated);
+  })
+);
+
+const easypayProvisionBodySchema = z.object({
+  /** Stable id in your app (e.g. admin user id or org key) — replays with same id are idempotent on Easypay. */
+  externalUserId: z.string().min(1).max(128),
+  ownerEmail: z.string().email(),
+  ownerName: z.string().min(1).max(120),
+  businessName: z.string().min(1).max(200),
+  slug: z.string().min(1).max(80).optional(),
+  industry: z.string().max(80).optional(),
+  /** Per-business webhook override (HTTPS). Omit to use Easypay default INTERNAL_PARTNER_WEBHOOK_URL. */
+  webhookUrl: z.string().url().optional().nullable()
+});
+
+/**
+ * POST /api/admin/easypay/provision — create (or replay) an Easypay tenant via internal-partner API.
+ * Requires EASYPAY_API_BASE_URL + INTERNAL_PARTNER_API_SECRET only. Copy returned `businessId` into
+ * EASYPAY_PARTNER_BUSINESS_ID for platform checkout, or store per-organizer if you move to multi-tenant.
+ */
+adminRouter.post(
+  '/easypay/provision',
+  asyncHandler(async (req: AuthRequest, res) => {
+    if (!getEasypayPartnerApiCredentialsOk()) {
+      res.status(503).json({
+        message: 'Set EASYPAY_API_BASE_URL and INTERNAL_PARTNER_API_SECRET to provision tenants.'
+      });
+      return;
+    }
+
+    const body = easypayProvisionBodySchema.parse(req.body);
+    const data = await provisionEasypayTenant({
+      externalUserId: body.externalUserId,
+      ownerEmail: body.ownerEmail,
+      ownerName: body.ownerName,
+      businessName: body.businessName,
+      slug: body.slug,
+      industry: body.industry,
+      webhookUrl: body.webhookUrl ?? undefined
+    });
+
+    await recordActivity({
+      type: 'EASYPAY_PROVISION',
+      title: `Easypay tenant provisioned: ${body.businessName}`,
+      detail: `businessId=${data.businessId} slug=${data.slug} idempotentReplay=${data.idempotentReplay}`,
+      actorId: req.userId ?? null
+    });
+
+    res.status(data.idempotentReplay ? 200 : 201).json({
+      message:
+        'Copy data.businessId into server EASYPAY_PARTNER_BUSINESS_ID (or your DB) so checkout uses this tenant.',
+      data
+    });
   })
 );
 

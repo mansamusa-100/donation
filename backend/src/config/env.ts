@@ -38,7 +38,13 @@ const envSchema = z.object({
   APS_WALLET_BASE_URL: z.string().default(''),
   APS_WALLET_MOBILE: z.string().default(''),
   APS_WALLET_PASSWORD: z.string().default(''),
-  APS_WALLET_ACCESS_CHANNEL: z.string().default('')
+  APS_WALLET_ACCESS_CHANNEL: z.string().default(''),
+  /** Easypay internal partner API — dashboard business + partner credentials */
+  EASYPAY_API_BASE_URL: z.string().default(''),
+  INTERNAL_PARTNER_API_SECRET: z.string().default(''),
+  INTERNAL_PARTNER_WEBHOOK_SECRET: z.string().default(''),
+  /** Business created in Easypay dashboard (single platform merchant) */
+  EASYPAY_PARTNER_BUSINESS_ID: z.string().default('')
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

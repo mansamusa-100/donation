@@ -11,6 +11,7 @@ export async function recordPlatformTip(
     userId?: string | null;
     campaignId?: string | null;
     wavePaymentIntentId?: string | null;
+    easypayPaymentIntentId?: string | null;
   }
 ) {
   if (params.amount <= 0) {
@@ -24,7 +25,8 @@ export async function recordPlatformTip(
       donorName: params.donorName,
       userId: params.userId ?? undefined,
       campaignId: params.campaignId ?? undefined,
-      wavePaymentIntentId: params.wavePaymentIntentId ?? undefined
+      wavePaymentIntentId: params.wavePaymentIntentId ?? undefined,
+      easypayPaymentIntentId: params.easypayPaymentIntentId ?? undefined
     }
   });
 

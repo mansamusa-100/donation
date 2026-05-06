@@ -56,6 +56,7 @@ model User {
   donations       Donation[]
   withdrawalRequests WithdrawalRequest[]
   wavePaymentIntents WavePaymentIntent[]
+  easypayPaymentIntents EasypayPaymentIntent[]
   platformTips    PlatformTip[]
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -83,6 +84,7 @@ model Campaign {
   donations        Donation[]
   withdrawalRequests WithdrawalRequest[]
   wavePaymentIntents WavePaymentIntent[]
+  easypayPaymentIntents EasypayPaymentIntent[]
   platformTips     PlatformTip[]
   creator          User?          @relation(fields: [creatorId], references: [id], onDelete: SetNull)
   createdAt        DateTime       @default(now())
@@ -114,9 +116,46 @@ model WavePaymentIntent {
   @@index([campaignId])
 }
 
+model EasypayPaymentIntent {
+  id                       String    @id @default(cuid())
+  partnerExternalBookingId String    @unique
+  easypayOrderId           String
+  orderPublicCode          String?
+  campaignId               String
+  userId                   String?
+  amount                   Int
+  platformTipAmount        Int       @default(0)
+  currency                 Currency  @default(GMD)
+  donorName                String
+  message                  String?
+  isAnonymous              Boolean   @default(false)
+  avatarUrl                String?
+  lastGatewayCode          String?
+  donationId               String?   @unique
+  donation                 Donation? @relation(fields: [donationId], references: [id], onDelete: SetNull)
+  campaign                 Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user                     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  platformTip              PlatformTip?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@index([campaignId])
+  @@index([easypayOrderId])
+}
+
+model EasypayWebhookReceipt {
+  id        String   @id @default(cuid())
+  paymentId String
+  event     String
+  createdAt DateTime @default(now())
+
+  @@unique([paymentId, event])
+}
+
 model PlatformTip {
   id                   String    @id @default(cuid())
   wavePaymentIntentId  String?   @unique
+  easypayPaymentIntentId String? @unique
   userId               String?
   donorName            String
   amount               Int
@@ -124,6 +163,7 @@ model PlatformTip {
   campaignId           String?
   createdAt            DateTime    @default(now())
   wavePaymentIntent    WavePaymentIntent? @relation(fields: [wavePaymentIntentId], references: [id], onDelete: SetNull)
+  easypayPaymentIntent EasypayPaymentIntent? @relation(fields: [easypayPaymentIntentId], references: [id], onDelete: SetNull)
   user                 User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
   campaign             Campaign?  @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
@@ -166,6 +206,7 @@ model Donation {
   campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   wavePaymentIntent WavePaymentIntent?
+  easypayPaymentIntent EasypayPaymentIntent?
 
   @@index([campaignId, createdAt])
 }

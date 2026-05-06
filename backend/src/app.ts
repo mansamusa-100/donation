@@ -16,6 +16,7 @@ import { uploadsRouter } from './routes/uploads.js';
 import { paymentsRouter } from './routes/payments.js';
 import { asyncHandler } from './lib/asyncHandler.js';
 import { handleWaveWebhook } from './routes/waveWebhook.js';
+import { handleEasypayPartnerWebhook } from './routes/easypayWebhook.js';
 
 export const app = express();
 
@@ -30,6 +31,11 @@ app.post(
   '/api/payments/wave/webhook',
   express.raw({ type: 'application/json' }),
   asyncHandler(handleWaveWebhook)
+);
+app.post(
+  '/api/payments/easypay/webhook',
+  express.raw({ type: 'application/json' }),
+  asyncHandler(handleEasypayPartnerWebhook)
 );
 app.use(express.json());
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));

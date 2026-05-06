@@ -47,6 +47,15 @@ export function DonateModal({
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [paymentWallet, setPaymentWallet] = useState<WalletId>('wave');
   const [paymentProviders, setPaymentProviders] = useState<PaymentProviderInfo[] | null>(null);
+  const [easypayCheckout, setEasypayCheckout] = useState(false);
+  const [yonnaPhone, setYonnaPhone] = useState('');
+  const [easypayApsGatewayCode, setEasypayApsGatewayCode] = useState<string | null>(null);
+  const [easypayApsBookingId, setEasypayApsBookingId] = useState<string | null>(null);
+  const [apsPhase, setApsPhase] = useState<'idle' | 'auth' | 'otp'>('idle');
+  const [apsMobile, setApsMobile] = useState('');
+  const [apsAuthState, setApsAuthState] = useState('');
+  const [apsOtp, setApsOtp] = useState('');
+  const [apsRequiresOtp, setApsRequiresOtp] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
 
@@ -69,11 +78,13 @@ export function DonateModal({
       .then((res) => {
         if (!cancelled) {
           setPaymentProviders(res.providers);
+          setEasypayCheckout(res.easypayCheckout === true);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setPaymentProviders([]);
+          setEasypayCheckout(false);
         }
       });
     return () => {
@@ -110,6 +121,16 @@ export function DonateModal({
     return true;
   };
 
+  const donatePayloadBase = () => ({
+    campaignSlug: campaignSlug!,
+    amount: Number(amount),
+    ...(platformTipAmount > 0 ? { platformTipAmount } : {}),
+    currency: 'GMD' as const,
+    ...(isAnonymous ? {} : donorName.trim() ? { donorName: donorName.trim() } : {}),
+    message: message || undefined,
+    isAnonymous
+  });
+
   const handlePayWithWave = async () => {
     if (!validateParticipantDetails()) {
       return;
@@ -119,20 +140,138 @@ export function DonateModal({
     setIsProcessing(true);
 
     try {
-      const session = await api.createWaveCheckoutSession({
-        campaignSlug: campaignSlug!,
-        amount: Number(amount),
-        ...(platformTipAmount > 0 ? { platformTipAmount } : {}),
-        currency: 'GMD',
-        ...(isAnonymous ? {} : donorName.trim() ? { donorName: donorName.trim() } : {}),
-        message: message || undefined,
-        isAnonymous
-      });
+      if (easypayCheckout) {
+        const res = await api.easypayPartnerCheckout({
+          ...donatePayloadBase(),
+          channel: 'wave'
+        });
+        if (res.kind !== 'redirect') {
+          setError('Unexpected Easypay response for Wave.');
+          setIsProcessing(false);
+          return;
+        }
+        window.location.assign(res.launchUrl);
+        return;
+      }
+
+      const session = await api.createWaveCheckoutSession(donatePayloadBase());
       window.location.assign(session.waveLaunchUrl);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Could not start Wave checkout. Is WAVE_API_KEY configured?'
+        err instanceof Error
+          ? err.message
+          : 'Could not start Wave checkout. Is WAVE_API_KEY or Easypay configured?'
       );
+      setIsProcessing(false);
+    }
+  };
+
+  const handlePayWithYonnaEasypay = async () => {
+    if (!validateParticipantDetails()) {
+      return;
+    }
+    setError('');
+    setIsProcessing(true);
+    try {
+      const res = await api.easypayPartnerCheckout({
+        ...donatePayloadBase(),
+        channel: 'yonna',
+        ...(yonnaPhone.trim() ? { payerPhone: yonnaPhone.trim() } : {})
+      });
+      if (res.kind !== 'redirect') {
+        setError('Unexpected Easypay response for Yonna.');
+        setIsProcessing(false);
+        return;
+      }
+      window.location.assign(res.launchUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start Yonna checkout.');
+      setIsProcessing(false);
+    }
+  };
+
+  const startEasypayApsOrder = async () => {
+    if (!validateParticipantDetails()) {
+      return;
+    }
+    setError('');
+    setIsProcessing(true);
+    try {
+      const res = await api.easypayPartnerCheckout({
+        ...donatePayloadBase(),
+        channel: 'aps'
+      });
+      if (res.kind !== 'aps') {
+        setError('Unexpected Easypay response for APS.');
+        setIsProcessing(false);
+        return;
+      }
+      setEasypayApsBookingId(res.partnerExternalBookingId);
+      setEasypayApsGatewayCode(res.gatewayCode);
+      setApsPhase('auth');
+      setIsProcessing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start APS checkout.');
+      setIsProcessing(false);
+    }
+  };
+
+  const handleApsAuthorize = async () => {
+    if (!easypayApsBookingId || !apsMobile.trim()) {
+      setError('Enter your APS wallet mobile number.');
+      return;
+    }
+    setError('');
+    setIsProcessing(true);
+    try {
+      const res = await api.easypayApsAuthorize({
+        partnerExternalBookingId: easypayApsBookingId,
+        payerMobile: apsMobile.trim()
+      });
+      setEasypayApsGatewayCode(res.gatewayCode);
+      setApsAuthState(res.authState);
+      setApsRequiresOtp(res.requiresOtp);
+      setApsPhase(res.requiresOtp ? 'otp' : 'otp');
+      setIsProcessing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'APS authorize failed.');
+      setIsProcessing(false);
+    }
+  };
+
+  const handleApsComplete = async () => {
+    if (!easypayApsBookingId || !easypayApsGatewayCode || !apsAuthState) {
+      setError('Complete the steps above first.');
+      return;
+    }
+    if (apsRequiresOtp && !apsOtp.trim()) {
+      setError('Enter the OTP sent to your phone.');
+      return;
+    }
+    setError('');
+    setIsProcessing(true);
+    try {
+      await api.easypayApsComplete({
+        partnerExternalBookingId: easypayApsBookingId,
+        gatewayCode: easypayApsGatewayCode,
+        authState: apsAuthState,
+        ...(apsOtp.trim() ? { otp: apsOtp.trim() } : {})
+      });
+      for (let i = 0; i < 10; i++) {
+        const st = await api.getEasypayPaymentStatus(easypayApsBookingId);
+        if (st.status === 'succeeded') {
+          setStep(3);
+          setIsProcessing(false);
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+      setError(
+        'Payment submitted. If your donation does not appear shortly, open the confirmation link from your receipt or contact support.'
+      );
+      setIsProcessing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'APS payment failed.');
       setIsProcessing(false);
     }
   };
@@ -172,6 +311,15 @@ export function DonateModal({
     setIsAnonymous(false);
     setPaymentWallet('wave');
     setPaymentProviders(null);
+    setEasypayCheckout(false);
+    setYonnaPhone('');
+    setEasypayApsGatewayCode(null);
+    setEasypayApsBookingId(null);
+    setApsPhase('idle');
+    setApsMobile('');
+    setApsAuthState('');
+    setApsOtp('');
+    setApsRequiresOtp(false);
     setError('');
     onClose();
   };
@@ -386,26 +534,51 @@ export function DonateModal({
               className="space-y-6">
               
                 <p className="text-xs text-surface-500">
-                  Choose a mobile wallet. APS and Yonna appear here now; your team connects each API on the server
-                  when you are ready.
+                  {easypayCheckout
+                    ? 'Payments go through Easypay (Wave, Yonna, or APS). Configure return URLs on the Easypay side if you want donors to land on your site after paying.'
+                    : 'Choose a mobile wallet. APS and Yonna appear here now; your team connects each API on the server when you are ready.'}
                 </p>
 
                 <div className="flex flex-wrap gap-2 p-1 bg-surface-100 rounded-xl">
                   <button
                     type="button"
-                    onClick={() => setPaymentWallet('wave')}
+                    onClick={() => {
+                      setPaymentWallet('wave');
+                      setApsPhase('idle');
+                      setEasypayApsBookingId(null);
+                      setEasypayApsGatewayCode(null);
+                      setApsMobile('');
+                      setApsAuthState('');
+                      setApsOtp('');
+                    }}
                     className={`flex-1 min-w-[5.5rem] py-2 px-2 text-sm font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors ${paymentWallet === 'wave' ? 'bg-white shadow-sm text-surface-900' : 'text-surface-500'}`}>
                     <SmartphoneIcon className="w-4 h-4 shrink-0" /> Wave
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPaymentWallet('aps')}
+                    onClick={() => {
+                      setPaymentWallet('aps');
+                      setApsPhase('idle');
+                      setEasypayApsBookingId(null);
+                      setEasypayApsGatewayCode(null);
+                      setApsMobile('');
+                      setApsAuthState('');
+                      setApsOtp('');
+                    }}
                     className={`flex-1 min-w-[5.5rem] py-2 px-2 text-sm font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors ${paymentWallet === 'aps' ? 'bg-white shadow-sm text-surface-900' : 'text-surface-500'}`}>
                     <Wallet className="w-4 h-4 shrink-0" /> APS
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPaymentWallet('yonna')}
+                    onClick={() => {
+                      setPaymentWallet('yonna');
+                      setApsPhase('idle');
+                      setEasypayApsBookingId(null);
+                      setEasypayApsGatewayCode(null);
+                      setApsMobile('');
+                      setApsAuthState('');
+                      setApsOtp('');
+                    }}
                     className={`flex-1 min-w-[5.5rem] py-2 px-2 text-sm font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors ${paymentWallet === 'yonna' ? 'bg-white shadow-sm text-surface-900' : 'text-surface-500'}`}>
                     <Landmark className="w-4 h-4 shrink-0" /> Yonna
                   </button>
@@ -432,9 +605,15 @@ export function DonateModal({
                         </li>
                       </ul>
                       <p className="text-xs text-surface-600">
-                        When payment succeeds, you&apos;ll return here to confirm. Match{' '}
-                        <code className="bg-white/80 px-1 rounded">WAVE_CHECKOUT_CURRENCY</code> to your wallet (e.g.
-                        GMD).
+                        {easypayCheckout
+                          ? 'After paying, you can open your campaign page to see the donation once Easypay confirms (or use the return URL your team configured on Easypay).'
+                          : (
+                            <>
+                              When payment succeeds, you&apos;ll return here to confirm. Match{' '}
+                              <code className="bg-white/80 px-1 rounded">WAVE_CHECKOUT_CURRENCY</code> to your wallet
+                              (e.g. GMD).
+                            </>
+                          )}
                       </p>
                     </div>
                   </div>
@@ -443,14 +622,69 @@ export function DonateModal({
                     <div className="p-4 bg-surface-50 border border-surface-200 rounded-xl text-sm text-surface-800 space-y-2">
                       <p className="font-semibold text-surface-900">Pay with APS Money</p>
                       <p>
-                        When enabled, donors will complete payment in the APS wallet flow for{' '}
-                        <strong>D{amount}</strong>.
+                        Total charge:{' '}
+                        <strong>D{(Number(amount) || 0) + platformTipAmount}</strong>
+                        {platformTipAmount > 0 ? (
+                          <span className="text-surface-600">
+                            {' '}
+                            (D{amount} + D{platformTipAmount} tip)
+                          </span>
+                        ) : null}
+                        .
                       </p>
-                      {paymentProviders.find((p) => p.id === 'aps')?.checkoutLive ? null : (
+                      {easypayCheckout && paymentProviders?.find((p) => p.id === 'aps')?.checkoutLive ? (
+                        apsPhase === 'idle' ? (
+                          <p className="text-xs text-surface-600">
+                            Tap Pay below to start. You&apos;ll enter your wallet mobile and OTP next.
+                          </p>
+                        ) : apsPhase === 'auth' ? (
+                          <div className="space-y-2 pt-2">
+                            <label className="block text-xs font-semibold text-surface-700">APS mobile number</label>
+                            <input
+                              type="tel"
+                              value={apsMobile}
+                              onChange={(e) => setApsMobile(e.target.value)}
+                              placeholder="e.g. 7XXXXXXX"
+                              className="w-full p-2 rounded-lg border-2 border-surface-200 text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void handleApsAuthorize()}
+                              disabled={isProcessing}
+                              className="w-full py-2 bg-brand-600 text-white rounded-lg font-semibold text-sm disabled:opacity-60">
+                              Send / authorize
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-2 pt-2">
+                            {apsRequiresOtp ? (
+                              <>
+                                <label className="block text-xs font-semibold text-surface-700">OTP</label>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={apsOtp}
+                                  onChange={(e) => setApsOtp(e.target.value)}
+                                  autoComplete="one-time-code"
+                                  aria-label="One-time passcode from APS"
+                                  className="w-full p-2 rounded-lg border-2 border-surface-200 text-sm"
+                                />
+                              </>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => void handleApsComplete()}
+                              disabled={isProcessing}
+                              className="w-full py-2 bg-brand-600 text-white rounded-lg font-semibold text-sm disabled:opacity-60">
+                              Complete payment
+                            </button>
+                          </div>
+                        )
+                      ) : paymentProviders?.find((p) => p.id === 'aps')?.checkoutLive ? null : (
                         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
-                          {paymentProviders.find((p) => p.id === 'aps')?.configured
+                          {paymentProviders?.find((p) => p.id === 'aps')?.configured
                             ? 'Server has APS environment variables — checkout still needs to be wired in the app.'
-                            : 'Not active yet: add APS_WALLET_BASE_URL, APS_WALLET_MOBILE, and APS_WALLET_PASSWORD to the server .env.'}
+                            : 'Not active yet: configure Easypay partner env vars or add APS_WALLET_* for direct APS.'}
                         </p>
                       )}
                     </div>
@@ -460,13 +694,35 @@ export function DonateModal({
                     <div className="p-4 bg-surface-50 border border-surface-200 rounded-xl text-sm text-surface-800 space-y-2">
                       <p className="font-semibold text-surface-900">Pay with Yonna</p>
                       <p>
-                        When enabled, donors will pay via the Yonna / Yonna Forex flow for <strong>D{amount}</strong>.
+                        Total charge:{' '}
+                        <strong>D{(Number(amount) || 0) + platformTipAmount}</strong>
+                        {platformTipAmount > 0 ? (
+                          <span className="text-surface-600">
+                            {' '}
+                            (D{amount} + D{platformTipAmount} tip)
+                          </span>
+                        ) : null}
+                        .
                       </p>
-                      {paymentProviders.find((p) => p.id === 'yonna')?.checkoutLive ? null : (
+                      {easypayCheckout && paymentProviders?.find((p) => p.id === 'yonna')?.checkoutLive ? (
+                        <div className="space-y-1 pt-1">
+                          <label className="block text-xs font-semibold text-surface-700">
+                            Mobile (optional, for Yonna)
+                          </label>
+                          <input
+                            type="tel"
+                            value={yonnaPhone}
+                            onChange={(e) => setYonnaPhone(e.target.value)}
+                            placeholder="If Easypay requires payer phone"
+                            className="w-full p-2 rounded-lg border-2 border-surface-200 text-sm"
+                          />
+                        </div>
+                      ) : null}
+                      {paymentProviders?.find((p) => p.id === 'yonna')?.checkoutLive ? null : (
                         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
-                          {paymentProviders.find((p) => p.id === 'yonna')?.configured
-                            ? 'Server has Yonna environment variables — checkout still needs to be wired in the app.'
-                            : 'Not active yet: add YONNA_FOREX_API_URL, YONNA_FOREX_SECRET_KEY, and YONNA_FOREX_CLIENT_ID to the server .env.'}
+                          {paymentProviders?.find((p) => p.id === 'yonna')?.configured
+                            ? 'Server has Yonna environment variables — use Easypay to enable Yonna checkout.'
+                            : 'Not active yet: configure Easypay partner or add YONNA_FOREX_* for a direct integration.'}
                         </p>
                       )}
                     </div>
@@ -507,14 +763,74 @@ export function DonateModal({
                           </button>
                         );
                       }
-                      const p = paymentProviders?.find((x) => x.id === paymentWallet);
-                      const live = p?.checkoutLive === true;
+
+                      if (paymentWallet === 'yonna') {
+                        const yonnaLive = paymentProviders?.find((p) => p.id === 'yonna')?.checkoutLive === true;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => void handlePayWithYonnaEasypay()}
+                            disabled={isProcessing || !yonnaLive}
+                            className="flex-1 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold text-lg transition-colors flex justify-center items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                            {isProcessing ? (
+                              <span className="animate-pulse">Opening Yonna…</span>
+                            ) : (
+                              <>
+                                Pay D{(Number(amount) || 0) + platformTipAmount} with Yonna
+                                {platformTipAmount > 0 ? (
+                                  <span className="text-sm font-normal opacity-90">
+                                    {' '}
+                                    (D{amount} + D{platformTipAmount} tip)
+                                  </span>
+                                ) : null}
+                              </>
+                            )}
+                          </button>
+                        );
+                      }
+
+                      const apsLive = paymentProviders?.find((p) => p.id === 'aps')?.checkoutLive === true;
+                      if (!apsLive) {
+                        return (
+                          <button
+                            type="button"
+                            disabled
+                            className="flex-1 py-4 bg-surface-200 text-surface-600 rounded-xl font-bold text-lg cursor-not-allowed">
+                            APS checkout soon
+                          </button>
+                        );
+                      }
+
+                      if (apsPhase === 'idle') {
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => void startEasypayApsOrder()}
+                            disabled={isProcessing}
+                            className="flex-1 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold text-lg transition-colors flex justify-center items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                            {isProcessing ? (
+                              <span className="animate-pulse">Starting…</span>
+                            ) : (
+                              <>
+                                Pay D{(Number(amount) || 0) + platformTipAmount} with APS
+                                {platformTipAmount > 0 ? (
+                                  <span className="text-sm font-normal opacity-90">
+                                    {' '}
+                                    (D{amount} + D{platformTipAmount} tip)
+                                  </span>
+                                ) : null}
+                              </>
+                            )}
+                          </button>
+                        );
+                      }
+
                       return (
                         <button
                           type="button"
                           disabled
-                          className="flex-1 py-4 bg-surface-200 text-surface-600 rounded-xl font-bold text-lg cursor-not-allowed">
-                          {live ? `Continue with ${p?.label}` : `${paymentWallet === 'aps' ? 'APS' : 'Yonna'} checkout soon`}
+                          className="flex-1 py-4 bg-surface-100 text-surface-600 rounded-xl font-bold text-base cursor-not-allowed">
+                          Continue in the APS fields above
                         </button>
                       );
                     })()}

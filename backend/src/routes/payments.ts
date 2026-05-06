@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
-import { Currency } from '@prisma/client';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { prisma } from '../lib/prisma.js';
 import { serializeCampaign } from '../lib/serializers.js';
@@ -9,9 +8,13 @@ import { waveCreateCheckoutSession, waveGetCheckoutSession } from '../lib/waveCh
 import { finalizeWaveIntentFromCheckoutSession } from '../lib/waveFinalizeIntent.js';
 import { optionalAuthenticate, AuthRequest } from '../lib/auth.js';
 import { env } from '../config/env.js';
-import { MAX_PLATFORM_TIP_PER_CHECKOUT } from '../config/platformTip.js';
+import { donationCheckoutBodySchema } from '../lib/donationCheckoutSchema.js';
+import { easypayPartnerConfigured } from '../lib/easypayPartner.js';
+import { easypayPaymentsRouter } from './easypayPayments.js';
 
 export const paymentsRouter = Router();
+
+paymentsRouter.use('/easypay', easypayPaymentsRouter);
 
 function waveDonationsEnabled(): boolean {
   return env.WAVE_API_KEY.trim().length > 0;
@@ -37,49 +40,34 @@ paymentsRouter.get('/providers', (_req, res) => {
   const waveOk = waveDonationsEnabled();
   const apsCfg = apsDonationsEnabled();
   const yonnaCfg = yonnaDonationsEnabled();
+  const easypay = easypayPartnerConfigured();
   res.json({
+    /** When true, Wave / APS / Yonna checkout uses Easypay partner API (single dashboard business). */
+    easypayCheckout: easypay,
     providers: [
       {
         id: 'wave',
         label: 'Wave',
-        /** Server has API credentials */
-        configured: waveOk,
-        /** Donor can start checkout today */
-        checkoutLive: waveOk
+        configured: easypay || waveOk,
+        checkoutLive: easypay || waveOk
       },
       {
         id: 'aps',
         label: 'APS Money',
-        configured: apsCfg,
-        checkoutLive: false
+        configured: easypay || apsCfg,
+        checkoutLive: easypay
       },
       {
         id: 'yonna',
         label: 'Yonna',
-        configured: yonnaCfg,
-        checkoutLive: false
+        configured: easypay || yonnaCfg,
+        checkoutLive: easypay
       }
     ] as const
   });
 });
 
-const waveSessionBodySchema = z.object({
-  campaignSlug: z.string().min(1),
-  amount: z.number().int().positive(),
-  /** Voluntary platform support (same currency); charged together with amount in Wave. */
-  platformTipAmount: z
-    .number()
-    .int()
-    .min(0)
-    .max(MAX_PLATFORM_TIP_PER_CHECKOUT)
-    .optional()
-    .default(0),
-  currency: z.nativeEnum(Currency).default('GMD'),
-  donorName: z.string().max(80).optional(),
-  message: z.string().max(280).optional(),
-  isAnonymous: z.boolean().default(false),
-  avatarUrl: z.string().url().optional()
-});
+const waveSessionBodySchema = donationCheckoutBodySchema;
 
 const waveConfirmBodySchema = z.object({
   clientReference: z.string().min(1).max(255)
