@@ -11,6 +11,7 @@ import {
   ShieldAlertIcon,
   UserCog,
   UsersIcon,
+  Wallet,
   X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -85,6 +86,8 @@ function activityTypeLabel(type: string) {
       return 'Admin created';
     case 'ADMIN_PERMISSIONS_CHANGED':
       return 'Admin permissions';
+    case 'EASYPAY_PROVISION':
+      return 'Easypay';
     default:
       return type;
   }
@@ -112,6 +115,7 @@ const PANEL_KEY_LABEL: Record<AdminPanelKey, string> = {
   withdrawals: 'Withdrawals',
   users: 'Users (activate/deactivate)',
   admins: 'Admins (create + permissions)',
+  easypay: 'Easypay (provision tenant)',
   audit: 'Audit log (reporting)'
 };
 
@@ -138,6 +142,7 @@ const NAV_DEF: { id: AdminTab; label: string; icon: typeof LayoutDashboardIcon }
   { id: 'withdrawals', label: 'Withdrawals', icon: BanknoteIcon },
   { id: 'users', label: 'Users', icon: UsersIcon },
   { id: 'admins', label: 'Admins', icon: UserCog },
+  { id: 'easypay', label: 'Easypay', icon: Wallet },
   { id: 'audit', label: 'Audit log', icon: ScrollTextIcon }
 ];
 
@@ -255,6 +260,27 @@ export function AdminPage() {
   const [newAdminFull, setNewAdminFull] = useState(true);
   const [newAdminKeys, setNewAdminKeys] = useState<AdminPanelKey[]>(['overview']);
   const [editing, setEditing] = useState<Record<string, { full: boolean; keys: AdminPanelKey[] }>>({});
+  const [easypayForm, setEasypayForm] = useState({
+    externalUserId: 'barakahfund-platform',
+    ownerEmail: '',
+    ownerName: '',
+    businessName: '',
+    slug: '',
+    industry: '',
+    webhookUrl: ''
+  });
+  const [easypaySubmitting, setEasypaySubmitting] = useState(false);
+  const [easypayError, setEasypayError] = useState('');
+  const [easypaySuccess, setEasypaySuccess] = useState<{
+    message: string;
+    data: {
+      businessId: string;
+      userId: string;
+      subscriptionId: string;
+      slug: string;
+      idempotentReplay: boolean;
+    };
+  } | null>(null);
   const [newAdminSubmitting, setNewAdminSubmitting] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
@@ -637,6 +663,29 @@ export function AdminPage() {
     setMobileNavOpen(false);
   };
 
+  const submitEasypayProvision = async (e: FormEvent) => {
+    e.preventDefault();
+    setEasypayError('');
+    setEasypaySuccess(null);
+    setEasypaySubmitting(true);
+    try {
+      const res = await api.adminEasypayProvision({
+        externalUserId: easypayForm.externalUserId.trim(),
+        ownerEmail: easypayForm.ownerEmail.trim(),
+        ownerName: easypayForm.ownerName.trim(),
+        businessName: easypayForm.businessName.trim(),
+        ...(easypayForm.slug.trim() ? { slug: easypayForm.slug.trim() } : {}),
+        ...(easypayForm.industry.trim() ? { industry: easypayForm.industry.trim() } : {}),
+        ...(easypayForm.webhookUrl.trim() ? { webhookUrl: easypayForm.webhookUrl.trim() } : {})
+      });
+      setEasypaySuccess(res);
+    } catch (err) {
+      setEasypayError(err instanceof Error ? err.message : 'Provision failed');
+    } finally {
+      setEasypaySubmitting(false);
+    }
+  };
+
   const handleExportAuditCsv = async () => {
     setAuditExportError('');
     setAuditExportBusy(true);
@@ -801,6 +850,8 @@ export function AdminPage() {
                 'Review organizer payout requests. Approve before sending funds; mark Paid when completed.'}
               {tab === 'users' && 'Activate or deactivate organizer and admin accounts.'}
               {tab === 'admins' && 'Create additional admins and choose which areas of the panel they may use. Empty permission list = full access.'}
+              {tab === 'easypay' &&
+                'Provision a merchant tenant on Easypay (or replay safely with the same external user id). Copy businessId into server EASYPAY_PARTNER_BUSINESS_ID.'}
               {tab === 'audit' &&
                 'Filter and export the activity ledger: campaign reviews, withdrawals, user activation, and admin account changes.'}
             </p>
@@ -1448,6 +1499,146 @@ export function AdminPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {tab === 'easypay' && canAccess('easypay') && (
+            <div className="max-w-2xl space-y-6">
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+                <h2 className="font-display font-bold text-lg text-slate-900">Easypay business provision</h2>
+                <p className="text-sm text-slate-600">
+                  Calls Easypay <code className="text-xs bg-slate-100 px-1 rounded">POST /provision</code> with your
+                  partner credentials. Use a stable <strong>External user id</strong> so repeats do not create duplicate
+                  tenants. After success, set <code className="text-xs bg-slate-100 px-1">EASYPAY_PARTNER_BUSINESS_ID</code>{' '}
+                  on the API server to the returned <strong>businessId</strong>.
+                </p>
+                {easypayError && (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm">{easypayError}</div>
+                )}
+                {easypaySuccess && (
+                  <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm space-y-2">
+                    <p className="font-semibold">{easypaySuccess.message}</p>
+                    <dl className="grid grid-cols-1 gap-1 text-xs font-mono">
+                      <div>
+                        <dt className="text-emerald-700 inline">businessId: </dt>
+                        <dd className="inline break-all">{easypaySuccess.data.businessId}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-emerald-700 inline">slug: </dt>
+                        <dd className="inline">{easypaySuccess.data.slug}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-emerald-700 inline">idempotentReplay: </dt>
+                        <dd className="inline">{String(easypaySuccess.data.idempotentReplay)}</dd>
+                      </div>
+                    </dl>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(easypaySuccess.data.businessId);
+                      }}
+                      className="text-xs font-bold text-emerald-800 underline">
+                      Copy businessId
+                    </button>
+                  </div>
+                )}
+                <form onSubmit={(ev) => void submitEasypayProvision(ev)} className="space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="ep-external-id">
+                      External user id
+                    </label>
+                    <input
+                      id="ep-external-id"
+                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      value={easypayForm.externalUserId}
+                      onChange={(e) => setEasypayForm((f) => ({ ...f, externalUserId: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="ep-owner-email">
+                      Owner email
+                    </label>
+                    <input
+                      id="ep-owner-email"
+                      type="email"
+                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      value={easypayForm.ownerEmail}
+                      onChange={(e) => setEasypayForm((f) => ({ ...f, ownerEmail: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="ep-owner-name">
+                      Owner name
+                    </label>
+                    <input
+                      id="ep-owner-name"
+                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      value={easypayForm.ownerName}
+                      onChange={(e) => setEasypayForm((f) => ({ ...f, ownerName: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="ep-business-name">
+                      Business name
+                    </label>
+                    <input
+                      id="ep-business-name"
+                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      value={easypayForm.businessName}
+                      onChange={(e) => setEasypayForm((f) => ({ ...f, businessName: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="ep-slug">
+                      Slug (optional)
+                    </label>
+                    <input
+                      id="ep-slug"
+                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      value={easypayForm.slug}
+                      onChange={(e) => setEasypayForm((f) => ({ ...f, slug: e.target.value }))}
+                      placeholder="barakahfund"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="ep-industry">
+                      Industry (optional)
+                    </label>
+                    <input
+                      id="ep-industry"
+                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      value={easypayForm.industry}
+                      onChange={(e) => setEasypayForm((f) => ({ ...f, industry: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="ep-webhook">
+                      Webhook URL override (optional)
+                    </label>
+                    <input
+                      id="ep-webhook"
+                      type="url"
+                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      value={easypayForm.webhookUrl}
+                      onChange={(e) => setEasypayForm((f) => ({ ...f, webhookUrl: e.target.value }))}
+                      placeholder="https://…/api/payments/easypay/webhook"
+                    />
+                    <p className="mt-1 text-xs text-slate-500">
+                      Leave blank to omit; Easypay will use their default partner webhook if configured.
+                    </p>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={easypaySubmitting}
+                    className="px-4 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-bold hover:bg-brand-700 disabled:opacity-50">
+                    {easypaySubmitting ? 'Provisioning…' : 'Provision on Easypay'}
+                  </button>
+                </form>
               </div>
             </div>
           )}

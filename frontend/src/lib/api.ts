@@ -529,5 +529,29 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ adminPanelPermissions })
     });
+  },
+
+  adminEasypayProvision(payload: {
+    externalUserId: string;
+    ownerEmail: string;
+    ownerName: string;
+    businessName: string;
+    slug?: string;
+    industry?: string;
+    webhookUrl?: string | null;
+  }) {
+    return request<{
+      message: string;
+      data: {
+        businessId: string;
+        userId: string;
+        subscriptionId: string;
+        slug: string;
+        idempotentReplay: boolean;
+      };
+    }>('/api/admin/easypay/provision', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
   }
 };

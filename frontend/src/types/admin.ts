@@ -84,6 +84,7 @@ export type AdminPanelKey =
   | 'withdrawals'
   | 'users'
   | 'admins'
+  | 'easypay'
   | 'audit';
 
 /** Known event types stored in ActivityLog (extend as you add recordActivity calls). */
@@ -94,7 +95,8 @@ export const AUDIT_EVENT_TYPES = [
   'WITHDRAWAL_REQUESTED',
   'WITHDRAWAL_STATUS_CHANGED',
   'ADMIN_ACCOUNT_CREATED',
-  'ADMIN_PERMISSIONS_CHANGED'
+  'ADMIN_PERMISSIONS_CHANGED',
+  'EASYPAY_PROVISION'
 ] as const;
 
 export interface AdminAuditLogItem extends AdminActivityItem {

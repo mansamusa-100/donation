@@ -45,10 +45,36 @@ export type EasypayProvisionResult = {
   idempotentReplay: boolean;
 };
 
+export function normalizeInternalPartnerSecret(raw: string): string {
+  let s = raw.trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"') && s.length >= 2) ||
+    (s.startsWith("'") && s.endsWith("'") && s.length >= 2)
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  if (/^bearer\s+/i.test(s)) {
+    s = s.replace(/^bearer\s+/i, '').trim();
+  }
+  return s;
+}
+
+/** Value for `Authorization` header on Easypay partner routes. */
+export function partnerAuthorizationHeader(): string {
+  const secret = normalizeInternalPartnerSecret(env.INTERNAL_PARTNER_API_SECRET);
+  if (!secret) {
+    return '';
+  }
+  if (env.INTERNAL_PARTNER_AUTH_MODE === 'raw') {
+    return secret;
+  }
+  return `Bearer ${secret}`;
+}
+
 /** Base URL + API secret only (e.g. admin provision before businessId exists). */
 export function getEasypayPartnerApiCredentialsOk(): boolean {
   const baseUrl = env.EASYPAY_API_BASE_URL.replace(/\/$/, '').trim();
-  const apiSecret = env.INTERNAL_PARTNER_API_SECRET.trim();
+  const apiSecret = normalizeInternalPartnerSecret(env.INTERNAL_PARTNER_API_SECRET);
   return Boolean(baseUrl && apiSecret);
 }
 
@@ -63,14 +89,14 @@ export function getPlatformEasypayBusinessId(): string {
 
 export async function partnerJson<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const baseUrl = env.EASYPAY_API_BASE_URL.replace(/\/$/, '').trim();
-  const apiSecret = env.INTERNAL_PARTNER_API_SECRET.trim();
-  if (!baseUrl || !apiSecret) {
+  const auth = partnerAuthorizationHeader();
+  if (!baseUrl || !auth) {
     throw new EasypayPartnerApiError(503, 'Easypay partner API is not configured', {});
   }
   const url = `${baseUrl}/api/internal-partner/v1${path.startsWith('/') ? path : `/${path}`}`;
   const method = init.method ?? 'GET';
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${apiSecret}`,
+    Authorization: auth,
     Accept: 'application/json'
   };
   let bodyStr: string | undefined;
@@ -87,11 +113,12 @@ export async function partnerJson<T>(path: string, init: { method?: string; body
     json = { raw: text };
   }
   if (!res.ok) {
-    throw new EasypayPartnerApiError(
-      res.status,
-      `Easypay ${method} ${path} failed: ${res.status} ${text.slice(0, 500)}`,
-      json
-    );
+    let msg = `Easypay ${method} ${path} failed: ${res.status} ${text.slice(0, 500)}`;
+    if (res.status === 401) {
+      msg +=
+        ' — Partner auth rejected: verify INTERNAL_PARTNER_API_SECRET with Easypay; ensure .env has no stray # on the same line; paste only the token (not "Bearer …"). If their docs require a raw header, set INTERNAL_PARTNER_AUTH_MODE=raw.';
+    }
+    throw new EasypayPartnerApiError(res.status, msg, json);
   }
   return json as T;
 }
@@ -451,11 +478,13 @@ export async function completeEasypayApsWallet(
 
 export async function cancelEasypayOrder(businessId: string, orderId: string): Promise<void> {
   if (!getEasypayPartnerApiCredentialsOk()) return;
+  const auth = partnerAuthorizationHeader();
+  if (!auth) return;
   const baseUrl = env.EASYPAY_API_BASE_URL.replace(/\/$/, '');
   const url = `${baseUrl}/api/internal-partner/v1/businesses/${encodeURIComponent(businessId)}/orders/${encodeURIComponent(orderId)}`;
   const res = await fetch(url, {
     method: 'DELETE',
-    headers: { Authorization: `Bearer ${env.INTERNAL_PARTNER_API_SECRET.trim()}` }
+    headers: { Authorization: auth }
   });
   if (res.status !== 204 && res.status !== 404) {
     const t = await res.text().catch(() => '');

@@ -6,6 +6,7 @@ export const ADMIN_PANEL_KEYS = [
   'withdrawals',
   'users',
   'admins',
+  'easypay',
   'audit'
 ] as const;
 

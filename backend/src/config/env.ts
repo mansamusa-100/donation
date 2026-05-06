@@ -42,6 +42,8 @@ const envSchema = z.object({
   /** Easypay internal partner API — dashboard business + partner credentials */
   EASYPAY_API_BASE_URL: z.string().default(''),
   INTERNAL_PARTNER_API_SECRET: z.string().default(''),
+  /** Use `raw` if Easypay expects the secret as the full Authorization value (no `Bearer `). Default: bearer. */
+  INTERNAL_PARTNER_AUTH_MODE: z.enum(['bearer', 'raw']).default('bearer'),
   INTERNAL_PARTNER_WEBHOOK_SECRET: z.string().default(''),
   /** Business created in Easypay dashboard (single platform merchant) */
   EASYPAY_PARTNER_BUSINESS_ID: z.string().default('')
