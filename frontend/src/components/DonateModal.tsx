@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { BRAND_NAME } from '../lib/brand';
 import { api } from '../lib/api';
+import { setEasypayPendingLaunchUrl } from '../lib/easypayPendingStorage';
 
 interface DonateModalProps {
   isOpen: boolean;
@@ -150,7 +151,11 @@ export function DonateModal({
           setIsProcessing(false);
           return;
         }
-        window.location.assign(res.launchUrl);
+        setEasypayPendingLaunchUrl(res.partnerExternalBookingId, res.launchUrl);
+        const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
+        window.location.assign(
+          `${window.location.origin}${base}/payment/easypay/pending?ref=${encodeURIComponent(res.partnerExternalBookingId)}`
+        );
         return;
       }
 
@@ -183,7 +188,11 @@ export function DonateModal({
         setIsProcessing(false);
         return;
       }
-      window.location.assign(res.launchUrl);
+      setEasypayPendingLaunchUrl(res.partnerExternalBookingId, res.launchUrl);
+      const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
+      window.location.assign(
+        `${window.location.origin}${base}/payment/easypay/pending?ref=${encodeURIComponent(res.partnerExternalBookingId)}`
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start Yonna checkout.');
       setIsProcessing(false);

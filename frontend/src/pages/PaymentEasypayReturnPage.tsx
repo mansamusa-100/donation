@@ -6,8 +6,8 @@ import type { Campaign } from '../types/campaign';
 
 type Phase = 'loading' | 'success' | 'pending' | 'error';
 
-const MAX_ATTEMPTS = 12;
-const RETRY_MS = 1500;
+const MAX_ATTEMPTS = 120;
+const RETRY_MS = 2500;
 
 export function PaymentEasypayReturnPage() {
   const [searchParams] = useSearchParams();

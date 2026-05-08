@@ -4,6 +4,10 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { env } from '../config/env.js';
 import { prisma } from '../lib/prisma.js';
+import {
+  mergeEasypayPartnerWebhookPayload,
+  applyEasypaySnakeCaseAliases
+} from '../lib/easypayPartnerPayload.js';
 import { finalizeEasypayIntentPaid } from '../lib/finalizeEasypayIntent.js';
 
 function verifyEasypayPartnerWebhook(
@@ -55,17 +59,9 @@ export async function handleEasypayPartnerWebhook(req: Request, res: Response): 
     return;
   }
 
-  const tryParse = (v: unknown) => webhookBodySchema.safeParse(v);
-  let body = tryParse(parsed);
-  if (
-    !body.success &&
-    parsed &&
-    typeof parsed === 'object' &&
-    parsed !== null &&
-    'data' in parsed
-  ) {
-    body = tryParse((parsed as { data: unknown }).data);
-  }
+  const merged = mergeEasypayPartnerWebhookPayload(parsed);
+  applyEasypaySnakeCaseAliases(merged);
+  const body = webhookBodySchema.safeParse(merged);
   if (!body.success) {
     res.status(400).json({ message: 'Invalid payload' });
     return;
