@@ -191,6 +191,7 @@ easypayPaymentsRouter.post(
         easypayOrderId: order.id,
         launchUrl: launch.launchUrl,
         qrPayload: launch.qrPayload,
+        paymentHtml: launch.paymentHtml,
         checkoutAdapter: launch.checkoutAdapter,
         campaignDonationAmount: body.amount,
         platformTipAmount: platformTip,

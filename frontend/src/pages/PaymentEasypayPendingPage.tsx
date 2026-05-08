@@ -1,11 +1,14 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CheckCircleIcon, ExternalLinkIcon, Loader2Icon } from 'lucide-react';
+import QRCode from 'qrcode';
+import { CheckCircleIcon, ExternalLinkIcon, Loader2Icon, QrCodeIcon } from 'lucide-react';
 import { api } from '../lib/api';
 import {
-  clearEasypayPendingLaunchUrl,
-  getEasypayPendingLaunchUrl
+  clearEasypayPendingWalletSession,
+  getEasypayPendingWalletSession,
+  type EasypayPendingWalletSession
 } from '../lib/easypayPendingStorage';
+import { isCoarseMobileDevice } from '../lib/device';
 import type { Campaign } from '../types/campaign';
 
 /** ~5 minutes — webhook after wallet can be delayed. */
@@ -16,7 +19,11 @@ export function PaymentEasypayPendingPage() {
   const [searchParams] = useSearchParams();
   const ref = searchParams.get('ref');
 
-  const [launchUrl, setLaunchUrl] = useState<string | null>(null);
+  const [session, setSession] = useState<EasypayPendingWalletSession | null>(null);
+  const mobile = useMemo(() => (typeof window !== 'undefined' ? isCoarseMobileDevice() : false), []);
+  const [showMobileQr, setShowMobileQr] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
   const [statusPhase, setStatusPhase] = useState<'checking' | 'success' | 'long_wait' | 'error'>(
     'checking'
   );
@@ -29,8 +36,34 @@ export function PaymentEasypayPendingPage() {
     if (!ref) {
       return;
     }
-    setLaunchUrl(getEasypayPendingLaunchUrl(ref));
+    setSession(getEasypayPendingWalletSession(ref));
   }, [ref]);
+
+  const qrPayload = session?.qrPayload?.trim() || null;
+  const paymentHtml = session?.paymentHtml?.trim() || null;
+  const launchUrl = session?.launchUrl ?? null;
+
+  useEffect(() => {
+    if (!qrPayload) {
+      setQrDataUrl(null);
+      return;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(qrPayload, { margin: 2, width: 256, errorCorrectionLevel: 'M' })
+      .then((url) => {
+        if (!cancelled) {
+          setQrDataUrl(url);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setQrDataUrl(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [qrPayload]);
 
   const openWallet = useCallback(() => {
     if (!launchUrl) {
@@ -57,7 +90,7 @@ export function PaymentEasypayPendingPage() {
           const result = await api.getEasypayPaymentStatus(ref);
           if (result.status === 'succeeded') {
             if (!cancelled) {
-              clearEasypayPendingLaunchUrl(ref);
+              clearEasypayPendingWalletSession(ref);
               setCampaign(result.campaign);
               setPlatformTipAmount(result.platformTipAmount ?? 0);
               setCampaignDonationAmount(result.campaignDonationAmount ?? null);
@@ -181,20 +214,50 @@ export function PaymentEasypayPendingPage() {
 
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center px-4 py-16">
-      <div className="text-center max-w-md space-y-5">
-        <h1 className="font-display font-bold text-xl text-surface-900">Finish paying in your wallet</h1>
+      <div className="text-center max-w-lg w-full space-y-5">
+        <h1 className="font-display font-bold text-xl text-surface-900">
+          {mobile ? 'Finish paying in your wallet' : 'Complete your payment'}
+        </h1>
         <p className="text-surface-600 text-sm">
-          Use the button below to open Easypay / your wallet. After you approve,{' '}
-          <strong>keep this tab open</strong> — we&apos;ll show a thank-you as soon as Easypay confirms (your campaign
-          only updates after that webhook).
+          {mobile
+            ? 'Open your wallet app to approve. After you pay, keep this page open — we will confirm as soon as Easypay notifies us.'
+            : 'On desktop you can use the secure checkout below or scan the QR code with your wallet app. Keep this tab open until you see the thank-you message.'}
         </p>
+
+        {!mobile && paymentHtml ? (
+          <div className="rounded-2xl border border-surface-200 bg-white overflow-hidden text-left shadow-sm">
+            <p className="text-xs font-semibold text-surface-500 px-3 pt-3 pb-1">Easypay checkout</p>
+            <iframe
+              title="Easypay wallet checkout"
+              srcDoc={paymentHtml}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+              className="w-full min-h-[420px] border-0 bg-white"
+            />
+          </div>
+        ) : null}
+
+        {!mobile && !paymentHtml && qrDataUrl ? (
+          <div className="flex flex-col items-center gap-2 rounded-2xl border border-surface-200 bg-surface-50 py-6 px-4">
+            <QrCodeIcon className="w-8 h-8 text-surface-600" aria-hidden />
+            <p className="text-sm font-semibold text-surface-800">Scan with your wallet app</p>
+            <img src={qrDataUrl} alt="QR code to complete payment in your wallet" className="rounded-xl" width={256} height={256} />
+          </div>
+        ) : null}
+
+        {mobile && (showMobileQr || !launchUrl) && qrDataUrl ? (
+          <div className="flex flex-col items-center gap-2 rounded-2xl border border-surface-200 bg-surface-50 py-4 px-4">
+            <p className="text-sm font-semibold text-surface-800">Scan with another device</p>
+            <img src={qrDataUrl} alt="QR code to complete payment" className="rounded-xl" width={220} height={220} />
+          </div>
+        ) : null}
+
         {launchUrl ? (
           <button
             type="button"
             onClick={() => openWallet()}
             className="inline-flex items-center justify-center gap-2 w-full px-6 py-3 bg-brand-600 text-white font-bold rounded-xl hover:bg-brand-700">
             <ExternalLinkIcon className="w-5 h-5" />
-            Open payment in wallet
+            {mobile ? 'Open wallet app' : 'Open wallet on this device'}
           </button>
         ) : (
           <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
@@ -202,6 +265,23 @@ export function PaymentEasypayPendingPage() {
             stay here — we&apos;re still checking with your reference.
           </p>
         )}
+
+        {mobile && launchUrl && qrDataUrl && !showMobileQr ? (
+          <button
+            type="button"
+            onClick={() => setShowMobileQr(true)}
+            className="text-sm font-semibold text-brand-700 hover:underline">
+            Pay using a QR code instead
+          </button>
+        ) : null}
+
+        {!mobile && !paymentHtml && !qrDataUrl && launchUrl ? (
+          <p className="text-xs text-surface-500">
+            No QR or embedded checkout was returned for this order — use the button above to open your wallet, or donate
+            from your phone.
+          </p>
+        ) : null}
+
         <div className="flex items-center justify-center gap-2 text-sm text-surface-500">
           <Loader2Icon className="w-4 h-4 animate-spin text-brand-600" />
           Waiting for Easypay confirmation…

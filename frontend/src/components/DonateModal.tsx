@@ -12,7 +12,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { BRAND_NAME } from '../lib/brand';
 import { api } from '../lib/api';
-import { setEasypayPendingLaunchUrl } from '../lib/easypayPendingStorage';
+import { setEasypayPendingWalletSession } from '../lib/easypayPendingStorage';
 
 interface DonateModalProps {
   isOpen: boolean;
@@ -151,7 +151,11 @@ export function DonateModal({
           setIsProcessing(false);
           return;
         }
-        setEasypayPendingLaunchUrl(res.partnerExternalBookingId, res.launchUrl);
+        setEasypayPendingWalletSession(res.partnerExternalBookingId, {
+          launchUrl: res.launchUrl,
+          qrPayload: res.qrPayload,
+          paymentHtml: res.paymentHtml ?? undefined
+        });
         const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
         window.location.assign(
           `${window.location.origin}${base}/payment/easypay/pending?ref=${encodeURIComponent(res.partnerExternalBookingId)}`
@@ -188,7 +192,11 @@ export function DonateModal({
         setIsProcessing(false);
         return;
       }
-      setEasypayPendingLaunchUrl(res.partnerExternalBookingId, res.launchUrl);
+      setEasypayPendingWalletSession(res.partnerExternalBookingId, {
+        launchUrl: res.launchUrl,
+        qrPayload: res.qrPayload,
+        paymentHtml: res.paymentHtml ?? undefined
+      });
       const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
       window.location.assign(
         `${window.location.origin}${base}/payment/easypay/pending?ref=${encodeURIComponent(res.partnerExternalBookingId)}`

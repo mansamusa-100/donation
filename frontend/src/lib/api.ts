@@ -290,6 +290,7 @@ export const api = {
           easypayOrderId: string;
           launchUrl: string;
           qrPayload: string;
+          paymentHtml?: string | null;
           checkoutAdapter: string;
           campaignDonationAmount: number;
           platformTipAmount: number;
