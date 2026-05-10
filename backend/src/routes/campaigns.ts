@@ -41,24 +41,48 @@ const coverImageSchema = z.string().refine(
   { message: 'Cover must be a valid image URL or an uploaded file path' }
 );
 
-const createCampaignSchema = z.object({
-  title: z.string().min(5).max(120),
-  creatorName: z.string().min(2).max(80),
-  creatorAvatar: z.string().url().optional(),
-  category: z.nativeEnum(Category),
-  shortDescription: z.string().min(20).max(240),
-  fullDescription: z.string().min(40),
-  goalAmount: z.number().int().positive(),
-  daysLeft: z.number().int().positive().max(365),
-  coverImage: coverImageSchema,
-  verificationDocumentUrl: z
+const createCampaignSchema = z
+  .object({
+    title: z.string().min(5).max(120),
+    creatorName: z.string().min(2).max(80),
+    creatorAvatar: z.string().url().optional(),
+    category: z.nativeEnum(Category),
+    shortDescription: z.string().min(20).max(240),
+    fullDescription: z.string().min(40),
+    goalAmount: z.number().int().positive(),
+    daysLeft: z.number().int().positive().max(365),
+    coverImage: coverImageSchema,
+    galleryImages: z.array(coverImageSchema).max(4).optional().default([]),
+    verificationDocumentUrl: z
     .string()
     .min(1)
     .refine((s) => s.startsWith('/uploads/verification-ids/'), {
       message: 'ID verification document must be uploaded'
     }),
   termsAcceptedAt: z.string().datetime()
-});
+  })
+  .superRefine((data, ctx) => {
+    const extras = data.galleryImages ?? [];
+    if (extras.includes(data.coverImage)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Gallery images must not duplicate the cover image',
+        path: ['galleryImages']
+      });
+    }
+    const seen = new Set<string>();
+    for (const url of extras) {
+      if (seen.has(url)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Duplicate gallery image URL',
+          path: ['galleryImages']
+        });
+        return;
+      }
+      seen.add(url);
+    }
+  });
 
 const createDonationSchema = z.object({
   /** Optional when authenticated; server uses account full name if missing (non-anonymous). */
@@ -430,6 +454,7 @@ campaignsRouter.post(
 
     const body = createCampaignSchema.parse(req.body);
     const slug = await ensureUniqueSlug(body.title);
+    const galleryImages = (body.galleryImages ?? []).filter((u) => u !== body.coverImage).slice(0, 4);
 
     const campaign = await prisma.campaign.create({
       data: {
@@ -445,6 +470,7 @@ campaignsRouter.post(
         goalAmount: body.goalAmount,
         daysLeft: body.daysLeft,
         coverImage: body.coverImage,
+        galleryImages,
         verificationDocumentUrl: body.verificationDocumentUrl,
         termsAcceptedAt: new Date(body.termsAcceptedAt),
         status: 'PendingReview',

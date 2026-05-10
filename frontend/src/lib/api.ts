@@ -30,6 +30,8 @@ interface ApiCreateCampaignInput {
   goalAmount: number;
   daysLeft: number;
   coverImage: string;
+  /** Up to 4 URLs (same upload rules as cover); optional. */
+  galleryImages?: string[];
   verificationDocumentUrl: string;
   /** ISO 8601 datetime when the organizer accepted the fee terms */
   termsAcceptedAt: string;

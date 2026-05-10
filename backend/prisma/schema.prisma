@@ -77,6 +77,8 @@ model Campaign {
   donorCount       Int            @default(0)
   daysLeft         Int
   coverImage       String
+  // Extra campaign photos (same rules as cover); max 4 + cover = 5 images total.
+  galleryImages    String[]       @default([])
   verificationDocumentUrl String?
   termsAcceptedAt         DateTime?
   isTrending       Boolean        @default(false)

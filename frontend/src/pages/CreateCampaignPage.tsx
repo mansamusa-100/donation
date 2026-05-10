@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
@@ -8,7 +8,8 @@ import {
   FileText,
   Image as ImageIcon,
   Shield,
-  Target
+  Target,
+  X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
@@ -17,13 +18,23 @@ import { mediaUrl } from '../lib/mediaUrl';
 import type { Category } from '../types/campaign';
 
 const TOTAL_STEPS = 5;
+const MAX_CAMPAIGN_PHOTOS = 5;
+const MAX_GALLERY_PHOTOS = MAX_CAMPAIGN_PHOTOS - 1;
+
+type GallerySlot = {
+  id: string;
+  preview: string;
+  url: string | null;
+  uploading: boolean;
+  error: string;
+};
 
 function stepLabel(n: number) {
   switch (n) {
     case 1:
       return 'Basics';
     case 2:
-      return 'Cover image';
+      return 'Campaign images';
     case 3:
       return 'ID verification';
     case 4:
@@ -55,6 +66,11 @@ export function CreateCampaignPage() {
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
   const [coverFieldError, setCoverFieldError] = useState('');
+  const [gallerySlots, setGallerySlots] = useState<GallerySlot[]>([]);
+  const [galleryFieldError, setGalleryFieldError] = useState('');
+
+  const gallerySlotsRef = useRef<GallerySlot[]>([]);
+  gallerySlotsRef.current = gallerySlots;
 
   const [verificationUrl, setVerificationUrl] = useState<string | null>(null);
   const [verificationFileName, setVerificationFileName] = useState('');
@@ -81,6 +97,16 @@ export function CreateCampaignPage() {
       }
     };
   }, [coverPreview]);
+
+  useEffect(() => {
+    return () => {
+      gallerySlotsRef.current.forEach((s) => {
+        if (s.preview.startsWith('blob:')) {
+          URL.revokeObjectURL(s.preview);
+        }
+      });
+    };
+  }, []);
 
   const loadCategories = async () => {
     try {
@@ -158,6 +184,83 @@ export function CreateCampaignPage() {
     }
   };
 
+  const removeGallerySlot = (id: string) => {
+    setGalleryFieldError('');
+    setGallerySlots((prev) => {
+      const row = prev.find((r) => r.id === id);
+      if (row?.preview.startsWith('blob:')) {
+        URL.revokeObjectURL(row.preview);
+      }
+      return prev.filter((r) => r.id !== id);
+    });
+  };
+
+  const handleGalleryFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const raw = input.files ? Array.from(input.files) : [];
+    input.value = '';
+    if (!raw.length) {
+      return;
+    }
+    setGalleryFieldError('');
+
+    setGallerySlots((prev) => {
+      const room = MAX_GALLERY_PHOTOS - prev.length;
+      if (room <= 0) {
+        Promise.resolve().then(() =>
+          setGalleryFieldError(
+            `You can upload up to ${MAX_CAMPAIGN_PHOTOS} images total (1 cover + ${MAX_GALLERY_PHOTOS} extra).`
+          )
+        );
+        return prev;
+      }
+
+      const typedOk = raw.filter(
+        (file) => /^image\/(jpeg|png|webp)$/.test(file.type) && file.size <= 5 * 1024 * 1024
+      );
+      if (typedOk.length === 0) {
+        Promise.resolve().then(() =>
+          setGalleryFieldError('Additional images must be JPEG, PNG, or WebP, up to 5MB each.')
+        );
+        return prev;
+      }
+
+      const validFiles = typedOk.slice(0, room);
+      if (validFiles.length < raw.length) {
+        Promise.resolve().then(() =>
+          setGalleryFieldError('Some files were skipped (type/size) or the gallery limit was reached.')
+        );
+      }
+
+      const additions: GallerySlot[] = validFiles.map((file) => ({
+        id: crypto.randomUUID(),
+        preview: URL.createObjectURL(file),
+        url: null,
+        uploading: true,
+        error: ''
+      }));
+
+      validFiles.forEach((file, i) => {
+        const id = additions[i].id;
+        void api.uploadCampaignCoverImage(file).then(
+          ({ url }) => {
+            setGallerySlots((rows) =>
+              rows.map((row) => (row.id === id ? { ...row, url, uploading: false, error: '' } : row))
+            );
+          },
+          (err: unknown) => {
+            const message = err instanceof Error ? err.message : 'Upload failed';
+            setGallerySlots((rows) =>
+              rows.map((row) => (row.id === id ? { ...row, uploading: false, error: message } : row))
+            );
+          }
+        );
+      });
+
+      return [...prev, ...additions];
+    });
+  };
+
   const computeDerived = () => {
     const desc = formData.description.trim();
     const shortDescription = desc.slice(0, 240);
@@ -209,7 +312,12 @@ export function CreateCampaignPage() {
       return validateStep1() === null;
     }
     if (step === 2) {
-      return Boolean(coverImageUrl) && !coverUploading;
+      return (
+        Boolean(coverImageUrl) &&
+        !coverUploading &&
+        !gallerySlots.some((s) => s.uploading) &&
+        !gallerySlots.some((s) => s.error && !s.url)
+      );
     }
     if (step === 3) {
       return Boolean(verificationUrl) && !verificationUploading;
@@ -231,6 +339,13 @@ export function CreateCampaignPage() {
     }
     if (step === 2 && (!coverImageUrl || coverUploading)) {
       setError('Please finish uploading your cover image.');
+      return;
+    }
+    if (
+      step === 2 &&
+      (gallerySlots.some((s) => s.uploading) || gallerySlots.some((s) => s.error && !s.url))
+    ) {
+      setError('Wait for gallery uploads to finish, or remove any failed images.');
       return;
     }
     if (step === 3 && (!verificationUrl || verificationUploading)) {
@@ -260,6 +375,9 @@ export function CreateCampaignPage() {
     setLoading(true);
     try {
       const { shortDescription, fullDescription, daysLeft } = computeDerived();
+      const galleryUrls = gallerySlots
+        .filter((s): s is GallerySlot & { url: string } => Boolean(s.url))
+        .map((s) => s.url);
       const campaign = await api.createCampaign({
         title: formData.title.trim(),
         creatorName: user?.fullName ?? 'Campaign organizer',
@@ -269,6 +387,7 @@ export function CreateCampaignPage() {
         goalAmount: Math.round(Number(formData.targetAmount)),
         daysLeft,
         coverImage: coverImageUrl,
+        ...(galleryUrls.length > 0 ? { galleryImages: galleryUrls } : {}),
         verificationDocumentUrl: verificationUrl,
         termsAcceptedAt: new Date().toISOString()
       });
@@ -429,12 +548,16 @@ export function CreateCampaignPage() {
           {step === 2 && (
             <div className="space-y-4">
               <p className="text-surface-600 text-sm">
-                Upload a photo that represents your campaign. JPEG, PNG, or WebP, up to 5MB.
+                Add a <strong className="text-surface-800">cover image</strong> (required), then up to{' '}
+                {MAX_GALLERY_PHOTOS} more photos ({MAX_CAMPAIGN_PHOTOS} total). JPEG, PNG, or WebP, up to 5MB each.
+                They are resized and compressed on the server for faster loading (especially on mobile).
               </p>
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-surface-200 rounded-2xl p-8 cursor-pointer hover:border-brand-300 hover:bg-brand-50/40 transition-colors">
                 <ImageIcon className="w-10 h-10 text-brand-600 mb-2" />
-                <span className="text-sm font-semibold text-surface-800">Choose image</span>
-                <span className="text-xs text-surface-500 mt-1">or drag and drop (browser permitting)</span>
+                <span className="text-sm font-semibold text-surface-800">Cover image</span>
+                <span className="text-xs text-surface-500 mt-1">
+                  Main photo for cards and the top of your page
+                </span>
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
@@ -460,6 +583,66 @@ export function CreateCampaignPage() {
                 <p className="text-sm text-emerald-700 flex items-center gap-1">
                   <CheckCircle2 size={16} /> Cover image saved
                 </p>
+              )}
+
+              {coverImageUrl && !coverUploading && (
+                <div className="pt-4 border-t border-surface-100 space-y-3">
+                  <p className="text-sm font-semibold text-surface-800">
+                    Additional photos ({gallerySlots.length}/{MAX_GALLERY_PHOTOS})
+                  </p>
+                  <p className="text-xs text-surface-500">
+                    Optional. Shown as a gallery on your public campaign page.
+                  </p>
+                  {gallerySlots.length < MAX_GALLERY_PHOTOS && (
+                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-surface-200 rounded-xl p-6 cursor-pointer hover:border-brand-300 hover:bg-brand-50/40 transition-colors">
+                      <span className="text-sm font-semibold text-surface-800">Add more images</span>
+                      <span className="text-xs text-surface-500 mt-1">Select one or more files</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        multiple
+                        aria-label="Upload optional campaign gallery images"
+                        onChange={(e) => handleGalleryFiles(e)}
+                      />
+                    </label>
+                  )}
+                  {galleryFieldError && (
+                    <p className="text-sm text-amber-700 flex items-center gap-1">
+                      <AlertCircle size={16} /> {galleryFieldError}
+                    </p>
+                  )}
+                  {gallerySlots.length > 0 && (
+                    <ul className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {gallerySlots.map((slot) => (
+                        <li
+                          key={slot.id}
+                          className="relative group rounded-xl overflow-hidden border border-surface-200 aspect-[4/3] bg-surface-100">
+                          <img src={slot.preview} alt="" className="w-full h-full object-cover" />
+                          {slot.uploading && (
+                            <div className="absolute inset-0 bg-surface-900/50 flex items-center justify-center text-white text-xs font-semibold">
+                              Uploading…
+                            </div>
+                          )}
+                          {slot.error && !slot.url && (
+                            <div className="absolute inset-0 bg-red-900/60 flex items-center justify-center p-2 text-white text-[10px] text-center leading-tight">
+                              {slot.error}
+                            </div>
+                          )}
+                          {!slot.uploading && (
+                            <button
+                              type="button"
+                              aria-label="Remove image"
+                              onClick={() => removeGallerySlot(slot.id)}
+                              className="absolute top-1.5 right-1.5 p-1 rounded-full bg-surface-900/75 text-white opacity-80 hover:opacity-100">
+                              <X size={14} />
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -519,6 +702,22 @@ export function CreateCampaignPage() {
                   />
                 </div>
               )}
+              {gallerySlots.some((s) => s.url) && (
+                <div>
+                  <p className="text-xs font-semibold text-surface-500 uppercase tracking-wide mb-2">
+                    Gallery preview
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {gallerySlots
+                      .filter((s): s is GallerySlot & { url: string } => Boolean(s.url))
+                      .map((s) => (
+                        <div key={s.id} className="rounded-lg overflow-hidden border border-surface-200 h-20">
+                          <img src={mediaUrl(s.url)} alt="" className="w-full h-full object-cover" />
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <h2 className="font-display font-bold text-lg text-surface-900">{formData.title.trim()}</h2>
                 <p className="text-xs text-surface-500 mt-1">
@@ -534,7 +733,7 @@ export function CreateCampaignPage() {
               <div className="p-3 rounded-lg bg-amber-50 border border-amber-100 text-amber-900 text-xs">
                 <strong className="font-semibold">Fees (summary):</strong> platform fees apply as described
                 in the next step. Amounts shown to donors and on your page are donation totals before
-                those internal fees — similar to common crowdfunding platforms.
+                those internal fees.
               </div>
             </div>
           )}
@@ -550,11 +749,8 @@ export function CreateCampaignPage() {
                 <ul className="list-disc pl-5 space-y-2">
                   <li>
                     <strong className="text-surface-900">Donation processing:</strong> A{' '}
-                    <strong>1.9%</strong> fee applies to each donation. This is handled on our side;{' '}
-                    <strong>
-                      donors and campaign pages still show the full donated amounts
-                    </strong>{' '}
-                    (the experience is similar to platforms like GoFundMe).
+                    <strong>1.9%</strong> fee applies to each donation. This is deducted from each donation 
+                    and will be deducted from the total amount received by the campaign organizer before the payout is processed.                   
                   </li>
                   <li>
                     <strong className="text-surface-900">Payout / withdrawal:</strong> When your campaign

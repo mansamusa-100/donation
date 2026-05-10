@@ -61,6 +61,7 @@ export function serializeCampaign(campaign: CampaignWithDonations) {
     donorCount: campaign.donorCount,
     daysLeft: campaign.daysLeft,
     coverImage: campaign.coverImage,
+    galleryImages: campaign.galleryImages ?? [],
     isTrending: campaign.isTrending,
     status: campaign.status,
     createdAt: campaign.createdAt.toISOString(),

@@ -337,3 +337,9 @@ EASYPAY_API_BASE_URL=https://dpay.phantommetrics.gm
 # generate 32 bit secrets
 INTERNAL_PARTNER_API_SECRET=
 INTERNAL_PARTNER_WEBHOOK_SECRET=
+
+
+#frontend"; npm install -D vite-plugin-pwa
+#npm install -D vite-plugin-pwa@0.21.1
+#backend"; npm install sharp@0.33.5
+#backend"; npm install sharp

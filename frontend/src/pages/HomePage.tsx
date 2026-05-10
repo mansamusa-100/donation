@@ -153,7 +153,7 @@ export function HomePage() {
           <div className="flex justify-between items-end mb-10">
             <div>
               <h2 className="text-3xl font-display font-bold text-surface-900 mb-2">Trending Campaigns</h2>
-              <p className="text-surface-500">Live data from your database — causes that are marked trending.</p>
+              {/* <p className="text-surface-500">Live data from your database — causes that are marked trending.</p> */}
             </div>
             <Link
               to="/explore"

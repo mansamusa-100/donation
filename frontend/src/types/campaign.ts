@@ -59,6 +59,8 @@ export interface Campaign {
   donorCount: number;
   daysLeft: number;
   coverImage: string;
+  /** Up to 4 extra photos; with cover, max 5 images per campaign. */
+  galleryImages?: string[];
   isTrending?: boolean;
   status?: CampaignStatus;
   createdAt?: string;

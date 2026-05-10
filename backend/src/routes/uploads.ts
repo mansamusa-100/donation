@@ -5,6 +5,10 @@ import { randomBytes } from 'node:crypto';
 import multer from 'multer';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { authenticate, AuthRequest } from '../lib/auth.js';
+import {
+  convertVerificationImageFileToWebp,
+  writeCampaignCoverWebp
+} from '../lib/processRasterUpload.js';
 
 const uploadsRoot = path.join(process.cwd(), 'uploads');
 
@@ -12,20 +16,8 @@ function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-const coverStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const dir = path.join(uploadsRoot, 'campaign-covers');
-    ensureDir(dir);
-    cb(null, dir);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
-    cb(null, `${Date.now()}-${randomBytes(8).toString('hex')}${ext}`);
-  }
-});
-
 const coverUpload = multer({
-  storage: coverStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const ok = ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype);
@@ -71,11 +63,19 @@ uploadsRouter.post(
   authenticate,
   coverUpload.single('file'),
   asyncHandler(async (req: AuthRequest, res) => {
-    if (!req.file) {
+    if (!req.file?.buffer) {
       res.status(400).json({ message: 'No file uploaded' });
       return;
     }
-    res.json({ url: `/uploads/campaign-covers/${req.file.filename}` });
+    try {
+      const { relativeUrl } = await writeCampaignCoverWebp(req.file.buffer);
+      res.json({ url: relativeUrl });
+    } catch (err) {
+      console.error('Campaign cover image processing failed:', err);
+      res.status(400).json({
+        message: 'Could not process that image. Try another JPEG, PNG, or WebP file.'
+      });
+    }
   })
 );
 
@@ -88,6 +88,20 @@ uploadsRouter.post(
       res.status(400).json({ message: 'No file uploaded' });
       return;
     }
-    res.json({ url: `/uploads/verification-ids/${req.file.filename}` });
+    try {
+      let url: string;
+      if (req.file.mimetype.startsWith('image/')) {
+        const { relativeUrl } = await convertVerificationImageFileToWebp(req.file.path);
+        url = relativeUrl;
+      } else {
+        url = `/uploads/verification-ids/${req.file.filename}`;
+      }
+      res.json({ url });
+    } catch (err) {
+      console.error('Verification document processing failed:', err);
+      res.status(400).json({
+        message: 'Could not process that file. Try another image or PDF.'
+      });
+    }
   })
 );

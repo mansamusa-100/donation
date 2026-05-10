@@ -107,6 +107,26 @@ export function CampaignDetailPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
         <div className="flex flex-col lg:flex-row gap-8 items-start">
           <div className="w-full lg:w-2/3 space-y-8">
+            {campaign.galleryImages && campaign.galleryImages.length > 0 && (
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-surface-200">
+                <h2 className="font-display font-bold text-surface-900 mb-3 text-sm uppercase tracking-wide">
+                  More photos
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+                  {campaign.galleryImages.map((src) => (
+                    <div
+                      key={src}
+                      className="relative rounded-xl overflow-hidden border border-surface-200 aspect-[4/3]">
+                      <img
+                        src={mediaUrl(src)}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-surface-200 flex items-center gap-4">
               <img
                 src={campaign.creatorAvatar}
