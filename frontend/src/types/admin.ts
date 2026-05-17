@@ -25,6 +25,7 @@ export interface AdminCampaign {
   raisedAmount: number;
   donorCount: number;
   daysLeft: number;
+  endsAt?: string;
   coverImage: string;
   /** Extra photos after cover; omit or empty for cover-only campaigns. */
   galleryImages?: string[];

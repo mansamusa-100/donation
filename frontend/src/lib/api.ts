@@ -28,7 +28,8 @@ interface ApiCreateCampaignInput {
   shortDescription: string;
   fullDescription: string;
   goalAmount: number;
-  daysLeft: number;
+  /** `YYYY-MM-DD` — server stores inclusive end-of UTC day and derives live `daysLeft`. */
+  campaignEndDate: string;
   coverImage: string;
   /** Up to 4 URLs (same upload rules as cover); optional. */
   galleryImages?: string[];

@@ -374,7 +374,7 @@ export function CreateCampaignPage() {
 
     setLoading(true);
     try {
-      const { shortDescription, fullDescription, daysLeft } = computeDerived();
+      const { shortDescription, fullDescription } = computeDerived();
       const galleryUrls = gallerySlots
         .filter((s): s is GallerySlot & { url: string } => Boolean(s.url))
         .map((s) => s.url);
@@ -385,7 +385,7 @@ export function CreateCampaignPage() {
         shortDescription,
         fullDescription,
         goalAmount: Math.round(Number(formData.targetAmount)),
-        daysLeft,
+        campaignEndDate: formData.deadline,
         coverImage: coverImageUrl,
         ...(galleryUrls.length > 0 ? { galleryImages: galleryUrls } : {}),
         verificationDocumentUrl: verificationUrl,

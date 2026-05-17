@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { prisma } from '../lib/prisma.js';
 import { serializeCampaign } from '../lib/serializers.js';
+import { isCampaignDonationWindowOpen } from '../lib/campaignEndsAt.js';
 import { waveCreateCheckoutSession, waveGetCheckoutSession } from '../lib/waveCheckout.js';
 import { finalizeWaveIntentFromCheckoutSession } from '../lib/waveFinalizeIntent.js';
 import { optionalAuthenticate, AuthRequest } from '../lib/auth.js';
@@ -104,6 +105,13 @@ paymentsRouter.post(
     if (campaign.status !== 'Active') {
       res.status(400).json({
         message: 'This campaign is not accepting donations.'
+      });
+      return;
+    }
+
+    if (!isCampaignDonationWindowOpen(campaign.endsAt)) {
+      res.status(400).json({
+        message: 'This campaign has ended and is no longer accepting donations.'
       });
       return;
     }

@@ -1,4 +1,5 @@
 import type { Category, Donation, Prisma } from '@prisma/client';
+import { computeDaysLeftFromEndsAt } from './campaignEndsAt.js';
 
 const categoryIconByCategory: Record<Category, string> = {
   Medical: 'HeartPulseIcon',
@@ -59,7 +60,8 @@ export function serializeCampaign(campaign: CampaignWithDonations) {
     goalAmount: campaign.goalAmount,
     raisedAmount: campaign.raisedAmount,
     donorCount: campaign.donorCount,
-    daysLeft: campaign.daysLeft,
+    endsAt: campaign.endsAt.toISOString(),
+    daysLeft: computeDaysLeftFromEndsAt(campaign.endsAt),
     coverImage: campaign.coverImage,
     galleryImages: campaign.galleryImages ?? [],
     isTrending: campaign.isTrending,

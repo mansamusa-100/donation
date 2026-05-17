@@ -4,9 +4,35 @@ import { PrismaClient } from '@prisma/client';
 import bcryptjs from 'bcryptjs';
 import { donationPlatformFeeFromGross } from '../src/config/fees.js';
 import { seedCampaigns, seedPlatformStats } from '../src/data/seedData.js';
+import {
+  computeDaysLeftFromEndsAt,
+  endOfUtcCalendarDayFromDateString,
+  utcCalendarDayStart
+} from '../src/lib/campaignEndsAt.js';
 
 dotenv.config();
 const prisma = new PrismaClient();
+
+function formatUtcYyyyMmDd(d: Date): string {
+  const u = utcCalendarDayStart(d);
+  return `${u.getUTCFullYear()}-${String(u.getUTCMonth() + 1).padStart(2, '0')}-${String(u.getUTCDate()).padStart(2, '0')}`;
+}
+
+function addUtcCalendarDaysYyyyMmDd(yyyyMmDd: string, days: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(yyyyMmDd);
+  if (!m) {
+    throw new Error('Invalid date string');
+  }
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  d.setUTCDate(d.getUTCDate() + days);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** Aligns with public API: `daysLeft` in seed data is calendar span to inclusive UTC end date. */
+function seedEndsAtForDaysLeft(daysLeft: number, now = new Date()): Date {
+  const endDateStr = addUtcCalendarDaysYyyyMmDd(formatUtcYyyyMmDd(now), daysLeft);
+  return endOfUtcCalendarDayFromDateString(endDateStr);
+}
 
 async function hashPassword(password: string): Promise<string> {
   return bcryptjs.hash(password, 10);
@@ -67,6 +93,8 @@ async function main() {
   });
 
   for (const campaign of seedCampaigns) {
+    const endsAt = seedEndsAtForDaysLeft(campaign.daysLeft);
+    const daysLeft = computeDaysLeftFromEndsAt(endsAt);
     const createdCampaign = await prisma.campaign.create({
       data: {
         slug: campaign.slug,
@@ -79,7 +107,8 @@ async function main() {
         goalAmount: campaign.goalAmount,
         raisedAmount: campaign.raisedAmount,
         donorCount: campaign.donorCount,
-        daysLeft: campaign.daysLeft,
+        daysLeft,
+        endsAt,
         coverImage: campaign.coverImage,
         isTrending: campaign.isTrending ?? false,
         status: 'Active',
@@ -105,6 +134,8 @@ async function main() {
     }
   }
 
+  const pendingEndsAt = seedEndsAtForDaysLeft(60);
+  const pendingDaysLeft = computeDaysLeftFromEndsAt(pendingEndsAt);
   await prisma.campaign.create({
     data: {
       slug: 'demo-pending-community-garden',
@@ -120,7 +151,8 @@ async function main() {
       goalAmount: 120000,
       raisedAmount: 0,
       donorCount: 0,
-      daysLeft: 60,
+      daysLeft: pendingDaysLeft,
+      endsAt: pendingEndsAt,
       coverImage: 'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800&q=80',
       isTrending: false,
       status: 'PendingReview',

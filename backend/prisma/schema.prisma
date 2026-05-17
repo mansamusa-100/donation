@@ -76,6 +76,8 @@ model Campaign {
   raisedAmount     Int            @default(0)
   donorCount       Int            @default(0)
   daysLeft         Int
+  /// Inclusive campaign deadline (end of the chosen UTC calendar day).
+  endsAt           DateTime
   coverImage       String
   // Extra campaign photos (same rules as cover); max 4 + cover = 5 images total.
   galleryImages    String[]       @default([])

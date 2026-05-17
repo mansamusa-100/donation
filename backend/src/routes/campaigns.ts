@@ -19,6 +19,11 @@ import {
 import { MAX_PLATFORM_TIP_PER_CHECKOUT } from '../config/platformTip.js';
 import { applyDonationToLedger, recordPlatformTip } from '../lib/processDonationLedger.js';
 import { HttpError } from '../lib/HttpError.js';
+import {
+  computeDaysLeftFromEndsAt,
+  isCampaignDonationWindowOpen,
+  validateNewCampaignEndDate
+} from '../lib/campaignEndsAt.js';
 
 const campaignQuerySchema = z.object({
   search: z.string().trim().optional(),
@@ -50,7 +55,7 @@ const createCampaignSchema = z
     shortDescription: z.string().min(20).max(240),
     fullDescription: z.string().min(40),
     goalAmount: z.number().int().positive(),
-    daysLeft: z.number().int().positive().max(365),
+    campaignEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     coverImage: coverImageSchema,
     galleryImages: z.array(coverImageSchema).max(4).optional().default([]),
     verificationDocumentUrl: z
@@ -453,6 +458,14 @@ campaignsRouter.post(
     }
 
     const body = createCampaignSchema.parse(req.body);
+    const endResult = validateNewCampaignEndDate(body.campaignEndDate);
+    if (!endResult.ok) {
+      res.status(400).json({ message: endResult.message });
+      return;
+    }
+    const { endsAt } = endResult;
+    const initialDaysLeft = computeDaysLeftFromEndsAt(endsAt);
+
     const slug = await ensureUniqueSlug(body.title);
     const galleryImages = (body.galleryImages ?? []).filter((u) => u !== body.coverImage).slice(0, 4);
 
@@ -468,7 +481,8 @@ campaignsRouter.post(
         shortDescription: body.shortDescription,
         fullDescription: body.fullDescription,
         goalAmount: body.goalAmount,
-        daysLeft: body.daysLeft,
+        daysLeft: initialDaysLeft,
+        endsAt,
         coverImage: body.coverImage,
         galleryImages,
         verificationDocumentUrl: body.verificationDocumentUrl,
@@ -546,6 +560,13 @@ campaignsRouter.post(
     if (campaign.status !== 'Active') {
       res.status(400).json({
         message: 'This campaign is not accepting donations. Only active campaigns can receive donations.'
+      });
+      return;
+    }
+
+    if (!isCampaignDonationWindowOpen(campaign.endsAt)) {
+      res.status(400).json({
+        message: 'This campaign has ended and is no longer accepting donations.'
       });
       return;
     }

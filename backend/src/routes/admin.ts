@@ -21,6 +21,7 @@ import {
   getEasypayPartnerApiCredentialsOk,
   provisionEasypayTenant
 } from '../lib/easypayPartner.js';
+import { computeDaysLeftFromEndsAt } from '../lib/campaignEndsAt.js';
 
 const adminRouter = Router();
 
@@ -283,7 +284,15 @@ adminRouter.get(
       })
     ]);
 
-    res.json({ items: campaigns, total, page, pageSize });
+    res.json({
+      items: campaigns.map((c) => ({
+        ...c,
+        daysLeft: computeDaysLeftFromEndsAt(c.endsAt)
+      })),
+      total,
+      page,
+      pageSize
+    });
   })
 );
 
@@ -314,7 +323,15 @@ adminRouter.get(
       })
     ]);
 
-    res.json({ items: campaigns, total, page, pageSize });
+    res.json({
+      items: campaigns.map((c) => ({
+        ...c,
+        daysLeft: computeDaysLeftFromEndsAt(c.endsAt)
+      })),
+      total,
+      page,
+      pageSize
+    });
   })
 );
 
@@ -410,7 +427,10 @@ adminRouter.patch(
 
     res.json({
       message: `Campaign ${body.status.toLowerCase()}`,
-      campaign: updatedCampaign
+      campaign: {
+        ...updatedCampaign,
+        daysLeft: computeDaysLeftFromEndsAt(updatedCampaign.endsAt)
+      }
     });
   })
 );

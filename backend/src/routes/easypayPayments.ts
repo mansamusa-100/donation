@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { prisma } from '../lib/prisma.js';
+import { isCampaignDonationWindowOpen } from '../lib/campaignEndsAt.js';
 import { optionalAuthenticate, AuthRequest } from '../lib/auth.js';
 import { donationCheckoutBodySchema } from '../lib/donationCheckoutSchema.js';
 import {
@@ -67,6 +68,13 @@ easypayPaymentsRouter.post(
     if (campaign.status !== 'Active') {
       res.status(400).json({
         message: 'This campaign is not accepting donations.'
+      });
+      return;
+    }
+
+    if (!isCampaignDonationWindowOpen(campaign.endsAt)) {
+      res.status(400).json({
+        message: 'This campaign has ended and is no longer accepting donations.'
       });
       return;
     }

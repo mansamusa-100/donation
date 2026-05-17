@@ -58,6 +58,8 @@ export interface Campaign {
   raisedAmount: number;
   donorCount: number;
   daysLeft: number;
+  /** ISO 8601 — authoritative deadline; `daysLeft` is derived from this on each response. */
+  endsAt?: string;
   coverImage: string;
   /** Up to 4 extra photos; with cover, max 5 images per campaign. */
   galleryImages?: string[];
