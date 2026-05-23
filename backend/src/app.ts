@@ -14,6 +14,9 @@ import { authRouter } from './routes/auth.js';
 import { adminRouter } from './routes/admin.js';
 import { uploadsRouter } from './routes/uploads.js';
 import { paymentsRouter } from './routes/payments.js';
+import { payoutMethodsRouter } from './routes/payoutMethods.js';
+import { platformBankAccountsRouter } from './routes/platformBankAccounts.js';
+import { bankTransfersRouter } from './routes/bankTransfers.js';
 import { asyncHandler } from './lib/asyncHandler.js';
 import { handleWaveWebhook } from './routes/waveWebhook.js';
 import { handleEasypayPartnerWebhook } from './routes/easypayWebhook.js';
@@ -48,6 +51,9 @@ app.use('/api/stats', statsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/uploads', uploadsRouter);
+app.use('/api/payout-methods', payoutMethodsRouter);
+app.use('/api/platform-bank-accounts', platformBankAccountsRouter);
+app.use('/api/bank-transfers', bankTransfersRouter);
 
 /** Production: serve Vite build from workspace sibling when present (same container as API). */
 const frontendDist = path.join(process.cwd(), '..', 'frontend', 'dist');

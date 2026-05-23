@@ -6,9 +6,11 @@ import {
   SmartphoneIcon,
   Wallet,
   Landmark,
+  Building2,
   CheckCircleIcon,
   SparklesIcon
 } from 'lucide-react';
+import type { PlatformBankAccount } from '../types/bank';
 import { useAuth } from '../context/AuthContext';
 import { BRAND_NAME } from '../lib/brand';
 import { api } from '../lib/api';
@@ -26,9 +28,10 @@ const PRESET_PLATFORM_TIPS = [0, 10, 25, 50];
 const MAX_PLATFORM_TIP = 100_000;
 
 type WalletId = 'wave' | 'aps' | 'yonna';
+type PaymentMethodId = WalletId | 'bank';
 
 type PaymentProviderInfo = {
-  id: WalletId;
+  id: WalletId | 'bank';
   label: string;
   configured: boolean;
   checkoutLive: boolean;
@@ -46,8 +49,10 @@ export function DonateModal({
   const [donorName, setDonorName] = useState('');
   const [message, setMessage] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(false);
-  const [paymentWallet, setPaymentWallet] = useState<WalletId>('wave');
+  const [paymentWallet, setPaymentWallet] = useState<PaymentMethodId>('wave');
   const [paymentProviders, setPaymentProviders] = useState<PaymentProviderInfo[] | null>(null);
+  const [platformBankAccounts, setPlatformBankAccounts] = useState<PlatformBankAccount[] | null>(null);
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState('');
   const [easypayCheckout, setEasypayCheckout] = useState(false);
   const [yonnaPhone, setYonnaPhone] = useState('');
   const [easypayApsGatewayCode, setEasypayApsGatewayCode] = useState<string | null>(null);
@@ -92,6 +97,31 @@ export function DonateModal({
       cancelled = true;
     };
   }, [isOpen, step]);
+
+  useEffect(() => {
+    if (!isOpen || step !== 2 || paymentWallet !== 'bank') {
+      return;
+    }
+    let cancelled = false;
+    void api
+      .getPlatformBankAccounts()
+      .then((rows) => {
+        if (!cancelled) {
+          setPlatformBankAccounts(rows);
+          setSelectedBankAccountId((prev) =>
+            prev && rows.some((r) => r.id === prev) ? prev : rows[0]?.id ?? ''
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPlatformBankAccounts([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, step, paymentWallet]);
 
   if (!isOpen) return null;
 
@@ -147,7 +177,7 @@ export function DonateModal({
           channel: 'wave'
         });
         if (res.kind !== 'redirect') {
-          setError('Unexpected Easypay response for Wave.');
+          setError('Unexpected DPay response for Wave.');
           setIsProcessing(false);
           return;
         }
@@ -169,7 +199,7 @@ export function DonateModal({
       setError(
         err instanceof Error
           ? err.message
-          : 'Could not start Wave checkout. Is WAVE_API_KEY or Easypay configured?'
+          : 'Could not start Wave checkout. Is WAVE_API_KEY or DPay configured?'
       );
       setIsProcessing(false);
     }
@@ -188,7 +218,7 @@ export function DonateModal({
         ...(yonnaPhone.trim() ? { payerPhone: yonnaPhone.trim() } : {})
       });
       if (res.kind !== 'redirect') {
-        setError('Unexpected Easypay response for Yonna.');
+        setError('Unexpected DPay response for Yonna.');
         setIsProcessing(false);
         return;
       }
@@ -219,7 +249,7 @@ export function DonateModal({
         channel: 'aps'
       });
       if (res.kind !== 'aps') {
-        setError('Unexpected Easypay response for APS.');
+        setError('Unexpected DPay response for APS.');
         setIsProcessing(false);
         return;
       }
@@ -293,6 +323,31 @@ export function DonateModal({
     }
   };
 
+  const handlePayWithBank = async () => {
+    if (!validateParticipantDetails()) {
+      return;
+    }
+    if (!selectedBankAccountId) {
+      setError('Select a bank account to transfer to.');
+      return;
+    }
+    setError('');
+    setIsProcessing(true);
+    try {
+      const res = await api.initiateBankTransfer({
+        ...donatePayloadBase(),
+        platformBankAccountId: selectedBankAccountId
+      });
+      const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
+      window.location.assign(
+        `${window.location.origin}${base}/payment/bank/pending?ref=${encodeURIComponent(res.clientReference)}`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start bank transfer.');
+      setIsProcessing(false);
+    }
+  };
+
   /** Development / fallback: record donation without wallet (when you intentionally keep direct API). */
   const handleSimulateDonation = async () => {
     if (!validateParticipantDetails()) {
@@ -337,6 +392,8 @@ export function DonateModal({
     setApsAuthState('');
     setApsOtp('');
     setApsRequiresOtp(false);
+    setPlatformBankAccounts(null);
+    setSelectedBankAccountId('');
     setError('');
     onClose();
   };
@@ -552,7 +609,7 @@ export function DonateModal({
               
                 <p className="text-xs text-surface-500">
                   {easypayCheckout
-                    ? 'Payments go through Easypay (Wave, Yonna, or APS). Configure return URLs on the Easypay side if you want donors to land on your site after paying.'
+                    ? 'Payments go through DPay (Wave, Yonna, or APS). Configure return URLs on the DPay side if you want donors to land on your site after paying.'
                     : 'Choose a mobile wallet. APS and Yonna appear here now; your team connects each API on the server when you are ready.'}
                 </p>
 
@@ -599,10 +656,61 @@ export function DonateModal({
                     className={`flex-1 min-w-[5.5rem] py-2 px-2 text-sm font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors ${paymentWallet === 'yonna' ? 'bg-white shadow-sm text-surface-900' : 'text-surface-500'}`}>
                     <Landmark className="w-4 h-4 shrink-0" /> Yonna
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentWallet('bank');
+                      setApsPhase('idle');
+                    }}
+                    className={`flex-1 min-w-[5.5rem] py-2 px-2 text-sm font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors ${paymentWallet === 'bank' ? 'bg-white shadow-sm text-surface-900' : 'text-surface-500'}`}>
+                    <Building2 className="w-4 h-4 shrink-0" /> Bank
+                  </button>
                 </div>
 
                 {paymentProviders === null ? (
                   <p className="text-sm text-surface-500 py-2">Loading wallet options…</p>
+                ) : paymentWallet === 'bank' ? (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-surface-50 border border-surface-200 rounded-xl text-sm text-surface-800 space-y-3">
+                      <p className="font-semibold text-surface-900">Pay by bank transfer</p>
+                      <p>
+                        You will get a unique reference and our receiving account details. The campaign total updates
+                        only after our team confirms your payment (within 5 days).
+                      </p>
+                      <ul className="text-sm space-y-1 list-disc list-inside text-surface-700">
+                        <li>
+                          Declared campaign amount: <strong>D{amount}</strong>
+                        </li>
+                        {platformTipAmount > 0 ? (
+                          <li>
+                            Platform tip (on confirm): <strong>D{platformTipAmount}</strong>
+                          </li>
+                        ) : null}
+                      </ul>
+                      {platformBankAccounts === null ? (
+                        <p className="text-xs text-surface-500">Loading bank accounts…</p>
+                      ) : platformBankAccounts.length === 0 ? (
+                        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
+                          Bank donations are not available yet — an admin must add an active receiving account.
+                        </p>
+                      ) : (
+                        <label className="block text-xs font-semibold text-surface-700">
+                          Transfer to
+                          <select
+                            value={selectedBankAccountId}
+                            onChange={(e) => setSelectedBankAccountId(e.target.value)}
+                            className="mt-1 w-full p-2 rounded-lg border-2 border-surface-200 text-sm bg-white">
+                            {platformBankAccounts.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.label ? `${a.label} — ` : ''}
+                                {a.bankName} ({a.accountNumber})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                    </div>
+                  </div>
                 ) : paymentWallet === 'wave' ? (
                   <div className="space-y-4">
                     <div className="p-4 bg-brand-50 border border-brand-100 rounded-xl text-sm text-surface-800 space-y-2">
@@ -623,7 +731,7 @@ export function DonateModal({
                       </ul>
                       <p className="text-xs text-surface-600">
                         {easypayCheckout
-                          ? 'After paying, you can open your campaign page to see the donation once Easypay confirms (or use the return URL your team configured on Easypay).'
+                          ? 'After paying, you can open your campaign page to see the donation once DPay confirms (or use the return URL your team configured on DPay).'
                           : (
                             <>
                               When payment succeeds, you&apos;ll return here to confirm. Match{' '}
@@ -701,7 +809,7 @@ export function DonateModal({
                         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
                           {paymentProviders?.find((p) => p.id === 'aps')?.configured
                             ? 'Server has APS environment variables — checkout still needs to be wired in the app.'
-                            : 'Not active yet: configure Easypay partner env vars or add APS_WALLET_* for direct APS.'}
+                            : 'Not active yet: configure DPay partner env vars or add APS_WALLET_* for direct APS.'}
                         </p>
                       )}
                     </div>
@@ -730,7 +838,7 @@ export function DonateModal({
                             type="tel"
                             value={yonnaPhone}
                             onChange={(e) => setYonnaPhone(e.target.value)}
-                            placeholder="If Easypay requires payer phone"
+                            placeholder="If DPay requires payer phone"
                             className="w-full p-2 rounded-lg border-2 border-surface-200 text-sm"
                           />
                         </div>
@@ -738,8 +846,8 @@ export function DonateModal({
                       {paymentProviders?.find((p) => p.id === 'yonna')?.checkoutLive ? null : (
                         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
                           {paymentProviders?.find((p) => p.id === 'yonna')?.configured
-                            ? 'Server has Yonna environment variables — use Easypay to enable Yonna checkout.'
-                            : 'Not active yet: configure Easypay partner or add YONNA_FOREX_* for a direct integration.'}
+                            ? 'Server has Yonna environment variables — use DPay to enable Yonna checkout.'
+                            : 'Not active yet: configure DPay partner or add YONNA_FOREX_* for a direct integration.'}
                         </p>
                       )}
                     </div>
@@ -755,6 +863,26 @@ export function DonateModal({
                       Back
                     </button>
                     {(() => {
+                      if (paymentWallet === 'bank') {
+                        const bankLive =
+                          paymentProviders?.find((p) => p.id === 'bank')?.checkoutLive === true &&
+                          (platformBankAccounts?.length ?? 0) > 0 &&
+                          Boolean(selectedBankAccountId);
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => void handlePayWithBank()}
+                            disabled={isProcessing || !bankLive}
+                            className="flex-1 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold text-lg transition-colors flex justify-center items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                            {isProcessing ? (
+                              <span className="animate-pulse">Preparing instructions…</span>
+                            ) : (
+                              <>Get bank transfer instructions</>
+                            )}
+                          </button>
+                        );
+                      }
+
                       const waveP = paymentProviders?.find((p) => p.id === 'wave');
                       const waveLive = waveP?.checkoutLive === true;
                       if (paymentWallet === 'wave') {

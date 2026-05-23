@@ -57,7 +57,7 @@ export function PaymentEasypayReturnPage() {
       if (!cancelled) {
         setPhase('pending');
         setErrorMessage(
-          'Payment is still processing. You can close this page; once Easypay confirms, the donation will appear on the campaign (usually within a minute).'
+          'Payment is still processing. You can close this page; once DPay confirms, the donation will appear on the campaign (usually within a minute).'
         );
       }
     })();
@@ -73,7 +73,7 @@ export function PaymentEasypayReturnPage() {
         <div className="text-center max-w-md">
           <Loader2Icon className="w-12 h-12 text-brand-600 animate-spin mx-auto mb-4" />
           <h1 className="font-display font-bold text-xl text-surface-900 mb-2">Confirming your payment</h1>
-          <p className="text-surface-600 text-sm">Waiting for Easypay confirmation…</p>
+          <p className="text-surface-600 text-sm">Waiting for DPay confirmation…</p>
         </div>
       )}
 

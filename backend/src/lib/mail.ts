@@ -1,6 +1,9 @@
+import type { PayoutMethodType } from '@prisma/client';
 import nodemailer from 'nodemailer';
+import { hasAdminPanelAccess } from '../config/adminPermissions.js';
 import { prisma } from './prisma.js';
 import { env } from '../config/env.js';
+import { buildPayoutDetailsEmailSection } from './payoutMethods.js';
 
 let transporter: nodemailer.Transporter | null = null;
 
@@ -117,6 +120,30 @@ function clientBaseUrl(): string {
   return env.CLIENT_ORIGIN.replace(/\/$/, '');
 }
 
+function formatGmd(amount: number): string {
+  return `D${amount.toLocaleString()}`;
+}
+
+function withdrawalAmountsBlock(params: {
+  requestedAmount: number;
+  processingFeeAmount: number;
+  netAmount: number;
+}): string {
+  return [
+    `Requested: ${formatGmd(params.requestedAmount)}`,
+    `Processing fee (3%): ${formatGmd(params.processingFeeAmount)}`,
+    `Net to you: ${formatGmd(params.netAmount)}`
+  ].join('\n');
+}
+
+type WithdrawalPayoutEmailFields = {
+  payoutMethodType?: PayoutMethodType | null;
+  payoutLabel?: string | null;
+  payoutDetails?: unknown;
+  payoutReference?: string | null;
+  paidAt?: Date | null;
+};
+
 // --- Transactional templates ---
 
 export async function sendWelcomeEmail(params: { to: string; fullName: string }): Promise<void> {
@@ -193,25 +220,181 @@ export async function sendDonationThankYouEmail(params: {
   }
 }
 
+type PlatformBankAccountEmail = {
+  label: string | null;
+  accountName: string;
+  bankName: string;
+  accountNumber: string;
+  swiftCode: string;
+  bban: string;
+};
+
+function buildPlatformBankAccountBlock(account: PlatformBankAccountEmail): string {
+  const labelLine = account.label?.trim() ? `Label: ${account.label.trim()}\n` : '';
+  return [
+    '--- Transfer to this account ---',
+    labelLine,
+    `Account name: ${account.accountName}`,
+    `Bank: ${account.bankName}`,
+    `Account number: ${account.accountNumber}`,
+    `SWIFT: ${account.swiftCode}`,
+    `BBAN: ${account.bban}`
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+export async function sendBankTransferPendingEmail(params: {
+  to: string;
+  donorName: string;
+  campaignTitle: string;
+  campaignSlug: string;
+  clientReference: string;
+  declaredAmount: number;
+  platformTipAmount: number;
+  expiresAt: Date;
+  platformBankAccount: PlatformBankAccountEmail;
+}): Promise<void> {
+  const statusUrl = `${clientBaseUrl()}/payment/bank/pending?ref=${encodeURIComponent(params.clientReference)}`;
+  const campaignUrl = `${clientBaseUrl()}/campaign/${params.campaignSlug}`;
+  const expires = params.expiresAt.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+  const subject = `[BarakahFund] Bank transfer instructions — ${params.clientReference}`;
+  const text = [
+    `Hi ${params.donorName},`,
+    '',
+    `You started a bank transfer for "${params.campaignTitle}".`,
+    '',
+    `Reference (put this in your transfer remarks): ${params.clientReference}`,
+    `Declared campaign amount: ${formatGmd(params.declaredAmount)}`,
+    params.platformTipAmount > 0
+      ? `Declared platform tip (recorded when we confirm): ${formatGmd(params.platformTipAmount)}`
+      : '',
+    `Complete your transfer by: ${expires}`,
+    '',
+    buildPlatformBankAccountBlock(params.platformBankAccount),
+    '',
+    'Your donation is not counted on the campaign until our team confirms the payment. The amount we credit may differ if you sent a different amount — we use what we receive.',
+    '',
+    `Track status: ${statusUrl}`,
+    `Campaign: ${campaignUrl}`,
+    '',
+    '— BarakahFund'
+  ]
+    .filter(Boolean)
+    .join('\n');
+  try {
+    await sendEmail({ to: params.to, subject, text });
+  } catch (err) {
+    console.error('[mail] sendBankTransferPendingEmail', err);
+  }
+}
+
+export async function notifyAdminsBankTransferPending(params: {
+  clientReference: string;
+  campaignTitle: string;
+  campaignSlug: string;
+  donorName: string;
+  donorEmail: string | null;
+  declaredAmount: number;
+  platformTipAmount: number;
+  expiresAt: Date;
+  platformBankAccount: PlatformBankAccountEmail;
+}): Promise<void> {
+  const admins = await prisma.user.findMany({
+    where: { role: 'ADMIN', isActive: true },
+    select: { email: true, adminPanelPermissions: true }
+  });
+  const recipients = admins.filter((a) =>
+    hasAdminPanelAccess('ADMIN', a.adminPanelPermissions, 'bank')
+  );
+  if (recipients.length === 0) {
+    return;
+  }
+  const adminUrl = `${clientBaseUrl()}/admin`;
+  const expires = params.expiresAt.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+  const subject = `[BarakahFund] Bank transfer pending: ${params.clientReference} — ${params.campaignTitle}`;
+  const text = [
+    'A donor initiated a bank transfer. Verify the incoming payment and confirm or reject in admin.',
+    '',
+    `Reference: ${params.clientReference}`,
+    `Campaign: ${params.campaignTitle} (${params.campaignSlug})`,
+    `Donor: ${params.donorName}`,
+    params.donorEmail ? `Email: ${params.donorEmail}` : 'Email: (guest / anonymous)',
+    `Declared amount: ${formatGmd(params.declaredAmount)}`,
+    params.platformTipAmount > 0 ? `Declared tip: ${formatGmd(params.platformTipAmount)}` : '',
+    `Expires: ${expires}`,
+    '',
+    buildPlatformBankAccountBlock(params.platformBankAccount),
+    '',
+    `Open bank transfers: ${adminUrl}`,
+    '',
+    '— BarakahFund'
+  ]
+    .filter(Boolean)
+    .join('\n');
+  for (const { email } of recipients) {
+    try {
+      await sendEmail({ to: email, subject, text });
+    } catch (err) {
+      console.error('[mail] notifyAdminsBankTransferPending', email, err);
+    }
+  }
+}
+
+export async function sendBankTransferRejectedEmail(params: {
+  to: string;
+  donorName: string;
+  campaignTitle: string;
+  clientReference: string;
+  adminNote?: string | null;
+}): Promise<void> {
+  const subject = `[BarakahFund] Bank transfer not confirmed — ${params.clientReference}`;
+  const text = [
+    `Hi ${params.donorName},`,
+    '',
+    `We could not confirm your bank transfer (${params.clientReference}) for "${params.campaignTitle}".`,
+    params.adminNote?.trim() ? `Note from our team: ${params.adminNote.trim()}` : '',
+    '',
+    'If you believe this is an error, reply to this email or contact support with your reference.',
+    '',
+    '— BarakahFund'
+  ]
+    .filter(Boolean)
+    .join('\n');
+  try {
+    await sendEmail({ to: params.to, subject, text });
+  } catch (err) {
+    console.error('[mail] sendBankTransferRejectedEmail', err);
+  }
+}
+
 export async function sendWithdrawalRequestReceivedEmail(params: {
   to: string;
   fullName: string;
   campaignTitle: string;
+  campaignSlug: string;
   requestedAmount: number;
   netAmount: number;
   processingFeeAmount: number;
-}): Promise<void> {
+  currency?: string;
+  organizerNote?: string | null;
+} & WithdrawalPayoutEmailFields): Promise<void> {
+  const dashboard = `${clientBaseUrl()}/dashboard`;
   const subject = `[BarakahFund] We’re processing your withdrawal request — ${params.campaignTitle}`;
   const text = [
     `Hi ${params.fullName},`,
     '',
     `We received your withdrawal request for the campaign "${params.campaignTitle}".`,
     '',
-    `Requested: D${params.requestedAmount.toLocaleString()}`,
-    `Processing fee (3%): D${params.processingFeeAmount.toLocaleString()}`,
-    `Estimated net: D${params.netAmount.toLocaleString()}`,
+    withdrawalAmountsBlock(params),
     '',
-    'Our team will review it and you will get another email when the status changes.',
+    buildPayoutDetailsEmailSection(params),
+    params.organizerNote?.trim()
+      ? `Your note: ${params.organizerNote.trim()}\n`
+      : '',
+    'Our team will review your request and pay out manually to the destination above. You will receive another email when the status changes.',
+    '',
+    `Track requests: ${dashboard}`,
     '',
     '— BarakahFund'
   ].join('\n');
@@ -219,6 +402,66 @@ export async function sendWithdrawalRequestReceivedEmail(params: {
     await sendEmail({ to: params.to, subject, text });
   } catch (err) {
     console.error('[mail] sendWithdrawalRequestReceivedEmail', err);
+  }
+}
+
+export async function notifyAdminsWithdrawalRequested(params: {
+  campaignTitle: string;
+  campaignSlug: string;
+  organizerName: string;
+  organizerEmail: string;
+  organizerPhone?: string | null;
+  requestedAmount: number;
+  netAmount: number;
+  processingFeeAmount: number;
+  currency?: string;
+  organizerNote?: string | null;
+  withdrawalRequestId: string;
+} & WithdrawalPayoutEmailFields): Promise<void> {
+  const admins = await prisma.user.findMany({
+    where: { role: 'ADMIN', isActive: true },
+    select: { email: true, adminPanelPermissions: true }
+  });
+
+  const recipients = admins.filter((a) =>
+    hasAdminPanelAccess('ADMIN', a.adminPanelPermissions, 'withdrawals')
+  );
+
+  if (recipients.length === 0) {
+    return;
+  }
+
+  const adminUrl = `${clientBaseUrl()}/admin`;
+  const subject = `[BarakahFund] Withdrawal to process: ${params.campaignTitle} — ${formatGmd(params.netAmount)} net`;
+  const text = [
+    'A campaign organizer has requested a withdrawal. Process the payout manually using the details below.',
+    '',
+    `Campaign: ${params.campaignTitle} (${params.campaignSlug})`,
+    `Request ID: ${params.withdrawalRequestId}`,
+    '',
+    '--- Organizer ---',
+    `Name: ${params.organizerName}`,
+    `Email: ${params.organizerEmail}`,
+    params.organizerPhone ? `Phone: ${params.organizerPhone}` : '',
+    '',
+    '--- Amounts ---',
+    withdrawalAmountsBlock(params),
+    '',
+    buildPayoutDetailsEmailSection(params),
+    params.organizerNote?.trim() ? `Organizer note: ${params.organizerNote.trim()}\n` : '',
+    `Open withdrawals in admin: ${adminUrl}`,
+    '',
+    '— BarakahFund'
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  for (const { email } of recipients) {
+    try {
+      await sendEmail({ to: email, subject, text });
+    } catch (err) {
+      console.error('[mail] notifyAdminsWithdrawalRequested', email, err);
+    }
   }
 }
 
@@ -282,7 +525,7 @@ export async function notifyCreatorCampaignDecision(params: {
   to: string;
   title: string;
   slug: string;
-  status: 'Active' | 'Rejected' | 'Closed';
+  status: 'Active' | 'Rejected' | 'Closed' | 'Ended';
 }): Promise<void> {
   const publicUrl = `${clientBaseUrl()}/campaign/${params.slug}`;
   const subject =
@@ -323,33 +566,53 @@ export async function notifyCreatorCampaignDecision(params: {
 
 export async function notifyCreatorWithdrawalStatus(params: {
   to: string;
+  fullName?: string;
   campaignTitle: string;
   requestedAmount: number;
   netAmount: number;
   processingFeeAmount: number;
+  currency?: string;
   status: 'Approved' | 'Rejected' | 'Paid';
-}): Promise<void> {
+  adminNote?: string | null;
+  organizerNote?: string | null;
+} & WithdrawalPayoutEmailFields): Promise<void> {
+  const greeting = params.fullName?.trim() ? `Hi ${params.fullName.trim()},` : 'Hi,';
+  const dashboard = `${clientBaseUrl()}/dashboard`;
+
   const subject =
     params.status === 'Paid'
-      ? `[BarakahFund] Payment complete — withdrawal for ${params.campaignTitle}`
+      ? `[BarakahFund] Payment complete — ${formatGmd(params.netAmount)} for ${params.campaignTitle}`
       : params.status === 'Approved'
         ? `[BarakahFund] Withdrawal approved: ${params.campaignTitle}`
         : `[BarakahFund] Withdrawal update: ${params.campaignTitle}`;
 
-  const body = [
-    `Campaign: ${params.campaignTitle}`,
-    `Requested: D${params.requestedAmount.toLocaleString()}`,
-    `Processing fee (3%): D${params.processingFeeAmount.toLocaleString()}`,
-    `Estimated net to you: D${params.netAmount.toLocaleString()}`,
-    '',
+  const statusMessage =
     params.status === 'Paid'
-      ? 'Success: your withdrawal has been marked as paid. Funds should reach you according to the payout method on file. Contact support if anything looks wrong.'
+      ? 'Your withdrawal has been marked as paid. Details of the payout are below. Contact support if anything looks wrong.'
       : params.status === 'Approved'
-        ? 'Your withdrawal request was approved. Payout will follow according to our schedule.'
-        : 'Your withdrawal request was not approved. Contact support if you need clarification.',
+        ? 'Your withdrawal request was approved. Our team will send the net amount to the payout destination below.'
+        : 'Your withdrawal request was not approved at this time.';
+
+  const body = [
+    greeting,
+    '',
+    `Campaign: ${params.campaignTitle}`,
+    '',
+    withdrawalAmountsBlock(params),
+    '',
+    buildPayoutDetailsEmailSection(params),
+    params.organizerNote?.trim() ? `Your note: ${params.organizerNote.trim()}\n` : '',
+    params.adminNote?.trim() && params.status !== 'Approved'
+      ? `Message from our team: ${params.adminNote.trim()}\n`
+      : '',
+    statusMessage,
+    '',
+    `View your dashboard: ${dashboard}`,
     '',
     '— BarakahFund'
-  ].join('\n');
+  ]
+    .filter((line) => line !== undefined)
+    .join('\n');
 
   try {
     await sendEmail({ to: params.to, subject, text: body });

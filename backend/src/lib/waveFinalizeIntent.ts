@@ -3,6 +3,7 @@ import { prisma } from './prisma.js';
 import { applyDonationToLedger, recordPlatformTip } from './processDonationLedger.js';
 import { waveAmountMatchesExpected } from './waveCheckout.js';
 import { serializeCampaign } from './serializers.js';
+import { tryFinalizeCampaignEnded } from './campaignLifecycle.js';
 import { sendDonationThankYouEmail } from './mail.js';
 
 export type WaveCheckoutSnapshot = {
@@ -106,6 +107,8 @@ export async function finalizeWaveIntentFromCheckoutSession(
         });
       }
     }
+
+    await tryFinalizeCampaignEnded(tx, intent.campaignId);
 
     return tx.campaign.findUnique({
       where: { id: intent.campaignId },

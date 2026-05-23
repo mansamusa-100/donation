@@ -12,10 +12,13 @@ import type {
   AdminAuditLogItem,
   AdminCampaign,
   AdminDashboardStats,
+  AdminExtensionRequestRow,
   AdminPaged,
   AdminUserRow,
   AdminWithdrawalRequestRow
 } from '../types/admin';
+import type { CampaignExtensionRequestSummary } from '../types/campaign';
+import type { PayoutMethodType, PayoutDetails, UserPayoutMethod } from '../types/payout';
 import type { User } from '../types/user';
 
 type CampaignSortOption = 'trending' | 'newest' | 'funded';
@@ -201,15 +204,68 @@ export const api = {
     return request<CreatorDashboardOverview>('/api/campaigns/mine/overview');
   },
 
+  getPayoutMethods() {
+    return request<UserPayoutMethod[]>('/api/payout-methods');
+  },
+
+  createPayoutMethod(payload: {
+    type: PayoutMethodType;
+    label?: string;
+    isDefault?: boolean;
+    details: PayoutDetails;
+  }) {
+    return request<UserPayoutMethod>('/api/payout-methods', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  updatePayoutMethod(
+    id: string,
+    payload: { label?: string; isDefault?: boolean; details?: PayoutDetails }
+  ) {
+    return request<UserPayoutMethod>(`/api/payout-methods/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  deletePayoutMethod(id: string) {
+    return request<{ message: string }>(`/api/payout-methods/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+  },
+
   createWithdrawalRequest(payload: {
     campaignSlug: string;
     amount: number;
+    payoutMethodId: string;
     note?: string;
   }) {
     return request<CreatorWithdrawalRequest>('/api/campaigns/withdrawal-requests', {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+  },
+
+  confirmCampaignEnd(slug: string) {
+    return request<Campaign>(`/api/campaigns/${encodeURIComponent(slug)}/confirm-end`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  },
+
+  requestCampaignExtension(
+    slug: string,
+    payload: { campaignEndDate: string; reason?: string }
+  ) {
+    return request<CampaignExtensionRequestSummary>(
+      `/api/campaigns/${encodeURIComponent(slug)}/extension-requests`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
   },
 
   createCampaign(payload: ApiCreateCampaignInput) {
@@ -264,12 +320,39 @@ export const api = {
     return request<{
       easypayCheckout?: boolean;
       providers: Array<{
-        id: 'wave' | 'aps' | 'yonna';
+        id: 'wave' | 'aps' | 'yonna' | 'bank';
         label: string;
         configured: boolean;
         checkoutLive: boolean;
       }>;
     }>('/api/payments/providers');
+  },
+
+  getPlatformBankAccounts() {
+    return request<import('../types/bank').PlatformBankAccount[]>('/api/platform-bank-accounts');
+  },
+
+  initiateBankTransfer(payload: {
+    campaignSlug: string;
+    amount: number;
+    platformTipAmount?: number;
+    currency?: 'GMD' | 'USD';
+    donorName?: string;
+    message?: string;
+    isAnonymous?: boolean;
+    avatarUrl?: string;
+    platformBankAccountId: string;
+  }) {
+    return request<import('../types/bank').BankTransferInitiateResult>('/api/bank-transfers/initiate', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  getBankTransferStatus(reference: string) {
+    return request<import('../types/bank').BankTransferIntentRow>(
+      `/api/bank-transfers/status/${encodeURIComponent(reference)}`
+    );
   },
 
   easypayPartnerCheckout(
@@ -463,9 +546,36 @@ export const api = {
     return request<AdminPaged<AdminWithdrawalRequestRow>>(`/api/admin/withdrawal-requests${q}`);
   },
 
+  getAdminPendingExtensionRequests(params?: { page?: number; pageSize?: number }) {
+    const q = adminListQuery(params?.page, params?.pageSize);
+    return request<AdminPaged<AdminExtensionRequestRow>>(
+      `/api/admin/campaigns/extension-requests/pending${q}`
+    );
+  },
+
+  reviewAdminExtensionRequest(
+    requestId: string,
+    payload: { status: 'Approved' | 'Rejected'; adminNote?: string }
+  ) {
+    return request<{ message: string }>(
+      `/api/admin/campaigns/extension-requests/${encodeURIComponent(requestId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  endInactiveCampaign(campaignId: string) {
+    return request<{ message: string }>(
+      `/api/admin/campaigns/${encodeURIComponent(campaignId)}/end-inactive`,
+      { method: 'POST', body: JSON.stringify({}) }
+    );
+  },
+
   updateAdminCampaignStatus(
     campaignId: string,
-    status: 'Active' | 'Rejected' | 'Closed'
+    status: 'Active' | 'Rejected' | 'Closed' | 'Ended'
   ) {
     return request<{ message: string; campaign: AdminCampaign }>(
       `/api/admin/campaigns/${campaignId}/status`,
@@ -488,7 +598,11 @@ export const api = {
 
   updateAdminWithdrawalRequest(
     requestId: string,
-    payload: { status: 'Approved' | 'Rejected' | 'Paid'; adminNote?: string }
+    payload: {
+      status: 'Approved' | 'Rejected' | 'Paid';
+      adminNote?: string;
+      payoutReference?: string;
+    }
   ) {
     return request<AdminWithdrawalRequestRow>(
       `/api/admin/withdrawal-requests/${encodeURIComponent(requestId)}`,
@@ -533,6 +647,91 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ adminPanelPermissions })
     });
+  },
+
+  getAdminPlatformBankAccounts() {
+    return request<import('../types/bank').PlatformBankAccount[]>('/api/admin/platform-bank-accounts');
+  },
+
+  createAdminPlatformBankAccount(payload: {
+    label?: string | null;
+    accountName: string;
+    bankName: string;
+    accountNumber: string;
+    swiftCode: string;
+    bban: string;
+    isActive?: boolean;
+    sortOrder?: number;
+  }) {
+    return request<import('../types/bank').PlatformBankAccount>('/api/admin/platform-bank-accounts', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  updateAdminPlatformBankAccount(
+    accountId: string,
+    payload: Partial<{
+      label: string | null;
+      accountName: string;
+      bankName: string;
+      accountNumber: string;
+      swiftCode: string;
+      bban: string;
+      isActive: boolean;
+      sortOrder: number;
+    }>
+  ) {
+    return request<import('../types/bank').PlatformBankAccount>(
+      `/api/admin/platform-bank-accounts/${encodeURIComponent(accountId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  getAdminBankTransfers(params?: { page?: number; pageSize?: number; status?: string }) {
+    const q = new URLSearchParams();
+    if (params?.page) {
+      q.set('page', String(params.page));
+    }
+    if (params?.pageSize) {
+      q.set('pageSize', String(params.pageSize));
+    }
+    if (params?.status) {
+      q.set('status', params.status);
+    }
+    const qs = q.toString();
+    return request<{
+      items: import('../types/bank').BankTransferIntentRow[];
+      total: number;
+      page: number;
+      pageSize: number;
+    }>(`/api/admin/bank-transfers${qs ? `?${qs}` : ''}`);
+  },
+
+  confirmAdminBankTransfer(
+    intentId: string,
+    payload: { receivedAmount: number; adminNote?: string }
+  ) {
+    return request<import('../types/bank').BankTransferIntentRow>(
+      `/api/admin/bank-transfers/${encodeURIComponent(intentId)}/confirm`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  rejectAdminBankTransfer(intentId: string, payload?: { adminNote?: string }) {
+    return request<import('../types/bank').BankTransferIntentRow>(
+      `/api/admin/bank-transfers/${encodeURIComponent(intentId)}/reject`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {})
+      }
+    );
   },
 
   adminEasypayProvision(payload: {

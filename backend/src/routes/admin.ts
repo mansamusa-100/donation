@@ -22,6 +22,21 @@ import {
   provisionEasypayTenant
 } from '../lib/easypayPartner.js';
 import { computeDaysLeftFromEndsAt } from '../lib/campaignEndsAt.js';
+import {
+  getLastDonationAt,
+  isInactiveForAdminEnd,
+  tryFinalizeCampaignEnded
+} from '../lib/campaignLifecycle.js';
+import { serializeWithdrawalPayout } from '../lib/payoutMethods.js';
+import { serializePlatformBankAccount } from '../lib/platformBankAccountSerialize.js';
+import { serializeBankTransferIntent } from '../lib/bankTransferSerialize.js';
+import { expireStaleBankTransferIntents } from '../lib/expireBankTransfers.js';
+import {
+  confirmBankTransferIntent,
+  sendBankTransferConfirmedEmails
+} from '../lib/finalizeBankTransfer.js';
+import { sendBankTransferRejectedEmail } from '../lib/mail.js';
+import { HttpError } from '../lib/HttpError.js';
 
 const adminRouter = Router();
 
@@ -244,13 +259,29 @@ adminRouter.get(
 );
 
 const approveCampaignSchema = z.object({
-  status: z.enum(['Active', 'Rejected', 'Closed'])
+  status: z.enum(['Active', 'Rejected', 'Closed', 'Ended'])
 });
 
-const patchWithdrawalRequestSchema = z.object({
-  status: z.enum(['Approved', 'Rejected', 'Paid']),
+const reviewExtensionSchema = z.object({
+  status: z.enum(['Approved', 'Rejected']),
   adminNote: z.string().max(500).optional()
 });
+
+const patchWithdrawalRequestSchema = z
+  .object({
+    status: z.enum(['Approved', 'Rejected', 'Paid']),
+    adminNote: z.string().max(500).optional(),
+    payoutReference: z.string().min(1).max(255).optional()
+  })
+  .superRefine((data, ctx) => {
+    if (data.status === 'Paid' && !data.payoutReference?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Payout reference is required when marking as paid (e.g. transfer ID or receipt note)',
+        path: ['payoutReference']
+      });
+    }
+  });
 
 // Get all pending campaigns
 adminRouter.get(
@@ -285,10 +316,17 @@ adminRouter.get(
     ]);
 
     res.json({
-      items: campaigns.map((c) => ({
-        ...c,
-        daysLeft: computeDaysLeftFromEndsAt(c.endsAt)
-      })),
+      items: await Promise.all(
+        campaigns.map(async (c) => {
+          const last = await getLastDonationAt(prisma, c.id);
+          return {
+            ...c,
+            daysLeft: computeDaysLeftFromEndsAt(c.endsAt),
+            lastDonationAt: last?.toISOString() ?? null,
+            inactive60Days: isInactiveForAdminEnd(last, c.createdAt)
+          };
+        })
+      ),
       total,
       page,
       pageSize
@@ -324,10 +362,18 @@ adminRouter.get(
     ]);
 
     res.json({
-      items: campaigns.map((c) => ({
-        ...c,
-        daysLeft: computeDaysLeftFromEndsAt(c.endsAt)
-      })),
+      items: await Promise.all(
+        campaigns.map(async (c) => {
+          const last = await getLastDonationAt(prisma, c.id);
+          return {
+            ...c,
+            daysLeft: computeDaysLeftFromEndsAt(c.endsAt),
+            lastDonationAt: last?.toISOString() ?? null,
+            inactive60Days:
+              c.status === 'Active' && isInactiveForAdminEnd(last, c.createdAt)
+          };
+        })
+      ),
       total,
       page,
       pageSize
@@ -389,7 +435,8 @@ adminRouter.patch(
     const updatedCampaign = await prisma.campaign.update({
       where: { id: campaignId },
       data: {
-        status: body.status as CampaignStatus
+        status: body.status as CampaignStatus,
+        ...(body.status === 'Ended' ? { endedAt: new Date() } : {})
       },
       include: {
         creator: {
@@ -415,7 +462,10 @@ adminRouter.patch(
     const creator = updatedCampaign.creator;
     if (
       creator?.email &&
-      (body.status === 'Active' || body.status === 'Rejected' || body.status === 'Closed')
+      (body.status === 'Active' ||
+        body.status === 'Rejected' ||
+        body.status === 'Closed' ||
+        body.status === 'Ended')
     ) {
       await notifyCreatorCampaignDecision({
         to: creator.email,
@@ -463,7 +513,17 @@ adminRouter.get(
       })
     ]);
 
-    res.json({ items: list, total, page, pageSize });
+    res.json({
+      items: list.map((w) => ({
+        ...w,
+        createdAt: w.createdAt.toISOString(),
+        updatedAt: w.updatedAt.toISOString(),
+        ...serializeWithdrawalPayout(w)
+      })),
+      total,
+      page,
+      pageSize
+    });
   })
 );
 
@@ -488,7 +548,7 @@ adminRouter.patch(
       where: { id: requestId },
       include: {
         campaign: { select: { title: true, slug: true } },
-        user: { select: { email: true } }
+        user: { select: { email: true, fullName: true } }
       }
     });
 
@@ -505,11 +565,25 @@ adminRouter.patch(
       return;
     }
 
+    if (body.status === 'Paid' && !existing.payoutMethodType) {
+      throw new HttpError(
+        400,
+        'This withdrawal has no payout destination on file. Ask the organizer to submit a new request.'
+      );
+    }
+
     const updated = await prisma.withdrawalRequest.update({
       where: { id: requestId },
       data: {
         status: body.status,
-        ...(body.adminNote !== undefined ? { adminNote: body.adminNote || null } : {})
+        ...(body.adminNote !== undefined ? { adminNote: body.adminNote || null } : {}),
+        ...(body.status === 'Paid'
+          ? {
+              payoutReference: body.payoutReference!.trim(),
+              paidAt: new Date(),
+              paidByAdminId: req.userId ?? null
+            }
+          : {})
       },
       include: {
         campaign: {
@@ -542,15 +616,223 @@ adminRouter.patch(
     ) {
       await notifyCreatorWithdrawalStatus({
         to: updated.user.email,
+        fullName: updated.user.fullName,
         campaignTitle: updated.campaign.title,
         requestedAmount: updated.amount,
         netAmount: updated.netAmount,
         processingFeeAmount: updated.processingFeeAmount,
-        status: body.status
+        currency: updated.currency,
+        status: body.status,
+        adminNote: updated.adminNote,
+        organizerNote: existing.note,
+        payoutMethodType: updated.payoutMethodType,
+        payoutLabel: updated.payoutLabel,
+        payoutDetails: updated.payoutDetails,
+        payoutReference: updated.payoutReference,
+        paidAt: updated.paidAt
       });
     }
 
-    res.json(updated);
+    if (body.status === 'Paid') {
+      await prisma.$transaction(async (tx) => {
+        await tryFinalizeCampaignEnded(tx, updated.campaignId);
+      });
+    }
+
+    res.json({
+      ...updated,
+      ...serializeWithdrawalPayout(updated)
+    });
+  })
+);
+
+adminRouter.get(
+  '/campaigns/extension-requests/pending',
+  requireAnyAdminPanel(['queue', 'campaigns']),
+  asyncHandler(async (req: Request, res) => {
+    const { page, pageSize, skip } = parsePagination(req.query, 20);
+    const where = { status: 'Pending' as const };
+    const [total, items] = await Promise.all([
+      prisma.campaignExtensionRequest.count({ where }),
+      prisma.campaignExtensionRequest.findMany({
+        where,
+        orderBy: { createdAt: 'asc' },
+        skip,
+        take: pageSize,
+        include: {
+          campaign: {
+            select: {
+              id: true,
+              title: true,
+              slug: true,
+              endsAt: true,
+              status: true,
+              creatorName: true
+            }
+          },
+          requestedBy: {
+            select: { id: true, fullName: true, email: true }
+          }
+        }
+      })
+    ]);
+    res.json({
+      items: items.map((r) => ({
+        id: r.id,
+        campaignId: r.campaignId,
+        campaignTitle: r.campaign.title,
+        campaignSlug: r.campaign.slug,
+        currentEndsAt: r.campaign.endsAt.toISOString(),
+        requestedEndDate: r.requestedEndDate,
+        requestedEndsAt: r.requestedEndsAt.toISOString(),
+        reason: r.reason,
+        status: r.status,
+        requestedBy: r.requestedBy,
+        createdAt: r.createdAt.toISOString()
+      })),
+      total,
+      page,
+      pageSize
+    });
+  })
+);
+
+adminRouter.patch(
+  '/campaigns/extension-requests/:requestId',
+  requireAnyAdminPanel(['queue', 'campaigns']),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const requestId = String(req.params.requestId);
+    const body = reviewExtensionSchema.parse(req.body);
+
+    const existing = await prisma.campaignExtensionRequest.findUnique({
+      where: { id: requestId },
+      include: { campaign: true }
+    });
+
+    if (!existing) {
+      res.status(404).json({ message: 'Extension request not found' });
+      return;
+    }
+
+    if (existing.status !== 'Pending') {
+      res.status(400).json({ message: 'This extension request has already been reviewed' });
+      return;
+    }
+
+    if (body.status === 'Approved') {
+      if (existing.campaign.status !== 'Active') {
+        res.status(400).json({ message: 'Only active campaigns can receive an extension' });
+        return;
+      }
+      if (existing.requestedEndsAt.getTime() <= existing.campaign.endsAt.getTime()) {
+        res.status(400).json({ message: 'Requested end date is not after the current end date' });
+        return;
+      }
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.campaignExtensionRequest.update({
+        where: { id: requestId },
+        data: {
+          status: body.status,
+          reviewedById: req.userId ?? null,
+          reviewedAt: new Date(),
+          adminNote: body.adminNote?.trim() || null
+        },
+        include: { campaign: true, requestedBy: { select: { email: true, fullName: true } } }
+      });
+
+      if (body.status === 'Approved') {
+        const daysLeft = computeDaysLeftFromEndsAt(existing.requestedEndsAt);
+        await tx.campaign.update({
+          where: { id: existing.campaignId },
+          data: {
+            endsAt: existing.requestedEndsAt,
+            daysLeft
+          }
+        });
+      }
+
+      return row;
+    });
+
+    await recordActivity({
+      type: 'CAMPAIGN_EXTENSION_REVIEWED',
+      title: `Extension ${body.status.toLowerCase()}: ${updated.campaign.title}`,
+      detail: `New end: ${existing.requestedEndDate}`,
+      campaignId: updated.campaignId,
+      userId: updated.campaign.creatorId,
+      actorId: req.userId ?? null
+    });
+
+    res.json({
+      message: `Extension request ${body.status.toLowerCase()}`,
+      request: {
+        id: updated.id,
+        status: updated.status,
+        adminNote: updated.adminNote,
+        reviewedAt: updated.reviewedAt?.toISOString() ?? null
+      }
+    });
+  })
+);
+
+adminRouter.post(
+  '/campaigns/:campaignId/end-inactive',
+  requireAnyAdminPanel(['queue', 'campaigns']),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const campaignId = String(req.params.campaignId);
+    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+
+    if (!campaign) {
+      res.status(404).json({ message: 'Campaign not found' });
+      return;
+    }
+
+    if (campaign.status !== 'Active') {
+      res.status(400).json({
+        message: 'Only active campaigns can be ended for inactivity'
+      });
+      return;
+    }
+
+    const lastDonationAt = await getLastDonationAt(prisma, campaignId);
+    if (!isInactiveForAdminEnd(lastDonationAt, campaign.createdAt)) {
+      res.status(400).json({
+        message: `Campaign is not inactive for ${60} days since the last donation`
+      });
+      return;
+    }
+
+    const updated = await prisma.campaign.update({
+      where: { id: campaignId },
+      data: {
+        status: 'Ended',
+        endedAt: new Date()
+      },
+      include: { donations: { take: 1 } }
+    });
+
+    await recordActivity({
+      type: 'CAMPAIGN_ENDED_INACTIVE',
+      title: `Campaign ended (60+ days inactive): ${updated.title}`,
+      detail: lastDonationAt
+        ? `Last donation: ${lastDonationAt.toISOString()}`
+        : 'No donations recorded',
+      campaignId: updated.id,
+      userId: updated.creatorId,
+      actorId: req.userId ?? null
+    });
+
+    res.json({
+      message: 'Campaign marked as ended due to inactivity',
+      campaign: {
+        id: updated.id,
+        slug: updated.slug,
+        status: updated.status,
+        endedAt: updated.endedAt?.toISOString() ?? null
+      }
+    });
   })
 );
 
@@ -887,6 +1169,228 @@ adminRouter.post(
         'Copy data.businessId into server EASYPAY_PARTNER_BUSINESS_ID (or your DB) so checkout uses this tenant.',
       data
     });
+  })
+);
+
+const platformBankAccountBodySchema = z.object({
+  label: z.string().max(120).optional().nullable(),
+  accountName: z.string().min(1).max(200),
+  bankName: z.string().min(1).max(200),
+  accountNumber: z.string().min(1).max(80),
+  swiftCode: z.string().min(1).max(40),
+  bban: z.string().min(1).max(80),
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).max(9999).optional()
+});
+
+adminRouter.get(
+  '/platform-bank-accounts',
+  requireAdminPanel('bank'),
+  asyncHandler(async (_req, res) => {
+    const rows = await prisma.platformBankAccount.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+    });
+    res.json(rows.map(serializePlatformBankAccount));
+  })
+);
+
+adminRouter.post(
+  '/platform-bank-accounts',
+  requireAdminPanel('bank'),
+  asyncHandler(async (req, res) => {
+    const body = platformBankAccountBodySchema.parse(req.body);
+    const row = await prisma.platformBankAccount.create({
+      data: {
+        label: body.label?.trim() || null,
+        accountName: body.accountName.trim(),
+        bankName: body.bankName.trim(),
+        accountNumber: body.accountNumber.trim(),
+        swiftCode: body.swiftCode.trim(),
+        bban: body.bban.trim(),
+        isActive: body.isActive ?? true,
+        sortOrder: body.sortOrder ?? 0
+      }
+    });
+    res.status(201).json(serializePlatformBankAccount(row));
+  })
+);
+
+adminRouter.patch(
+  '/platform-bank-accounts/:accountId',
+  requireAdminPanel('bank'),
+  asyncHandler(async (req, res) => {
+    const accountId = String(req.params.accountId);
+    const body = platformBankAccountBodySchema.partial().parse(req.body);
+    const existing = await prisma.platformBankAccount.findUnique({ where: { id: accountId } });
+    if (!existing) {
+      res.status(404).json({ message: 'Bank account not found' });
+      return;
+    }
+    const row = await prisma.platformBankAccount.update({
+      where: { id: accountId },
+      data: {
+        ...(body.label !== undefined ? { label: body.label?.trim() || null } : {}),
+        ...(body.accountName !== undefined ? { accountName: body.accountName.trim() } : {}),
+        ...(body.bankName !== undefined ? { bankName: body.bankName.trim() } : {}),
+        ...(body.accountNumber !== undefined ? { accountNumber: body.accountNumber.trim() } : {}),
+        ...(body.swiftCode !== undefined ? { swiftCode: body.swiftCode.trim() } : {}),
+        ...(body.bban !== undefined ? { bban: body.bban.trim() } : {}),
+        ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
+        ...(body.sortOrder !== undefined ? { sortOrder: body.sortOrder } : {})
+      }
+    });
+    res.json(serializePlatformBankAccount(row));
+  })
+);
+
+adminRouter.get(
+  '/bank-transfers',
+  requireAdminPanel('bank'),
+  asyncHandler(async (req, res) => {
+    await expireStaleBankTransferIntents();
+    const { page, pageSize, skip } = parsePagination(req.query);
+    const statusFilter = z
+      .enum(['Pending', 'Confirmed', 'Rejected', 'Expired'])
+      .optional()
+      .parse(req.query.status);
+    const where = statusFilter ? { status: statusFilter } : {};
+    const [total, items] = await Promise.all([
+      prisma.bankTransferIntent.count({ where }),
+      prisma.bankTransferIntent.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: pageSize,
+        include: {
+          campaign: { select: { title: true, slug: true } },
+          platformBankAccount: true,
+          user: { select: { email: true, fullName: true } }
+        }
+      })
+    ]);
+    res.json({
+      items: items.map(serializeBankTransferIntent),
+      total,
+      page,
+      pageSize
+    });
+  })
+);
+
+const confirmBankTransferSchema = z.object({
+  receivedAmount: z.number().int().min(1),
+  adminNote: z.string().max(2000).optional().nullable()
+});
+
+const rejectBankTransferSchema = z.object({
+  adminNote: z.string().max(2000).optional().nullable()
+});
+
+adminRouter.post(
+  '/bank-transfers/:intentId/confirm',
+  requireAdminPanel('bank'),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const intentId = String(req.params.intentId);
+    const body = confirmBankTransferSchema.parse(req.body);
+
+    const intent = await prisma.bankTransferIntent.findUnique({
+      where: { id: intentId },
+      include: {
+        campaign: { select: { title: true, slug: true } },
+        user: { select: { email: true, fullName: true } }
+      }
+    });
+
+    if (!intent) {
+      res.status(404).json({ message: 'Bank transfer not found' });
+      return;
+    }
+
+    try {
+      const { updated, donation } = await confirmBankTransferIntent({
+        intent,
+        receivedAmount: body.receivedAmount,
+        reviewedById: req.userId ?? null,
+        adminNote: body.adminNote
+      });
+
+      await recordActivity({
+        type: 'BANK_TRANSFER_CONFIRMED',
+        title: `Bank transfer confirmed: ${intent.clientReference} — D${body.receivedAmount}`,
+        detail: intent.campaign.title,
+        campaignId: intent.campaignId,
+        actorId: req.userId ?? null
+      });
+
+      await sendBankTransferConfirmedEmails(updated, donation.amount);
+
+      res.json(serializeBankTransferIntent(updated));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not confirm transfer';
+      res.status(400).json({ message });
+    }
+  })
+);
+
+adminRouter.post(
+  '/bank-transfers/:intentId/reject',
+  requireAdminPanel('bank'),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const intentId = String(req.params.intentId);
+    const body = rejectBankTransferSchema.parse(req.body);
+
+    const intent = await prisma.bankTransferIntent.findUnique({
+      where: { id: intentId },
+      include: {
+        campaign: { select: { title: true, slug: true } },
+        user: { select: { email: true, fullName: true } }
+      }
+    });
+
+    if (!intent) {
+      res.status(404).json({ message: 'Bank transfer not found' });
+      return;
+    }
+
+    if (intent.status !== 'Pending') {
+      res.status(400).json({ message: `Cannot reject transfer in status ${intent.status}` });
+      return;
+    }
+
+    const updated = await prisma.bankTransferIntent.update({
+      where: { id: intentId },
+      data: {
+        status: 'Rejected',
+        reviewedById: req.userId ?? null,
+        reviewedAt: new Date(),
+        adminNote: body.adminNote?.trim() || null
+      },
+      include: {
+        campaign: { select: { title: true, slug: true } },
+        platformBankAccount: true,
+        user: { select: { email: true, fullName: true } }
+      }
+    });
+
+    await recordActivity({
+      type: 'BANK_TRANSFER_REJECTED',
+      title: `Bank transfer rejected: ${intent.clientReference}`,
+      detail: intent.campaign.title,
+      campaignId: intent.campaignId,
+      actorId: req.userId ?? null
+    });
+
+    if (updated.user?.email) {
+      void sendBankTransferRejectedEmail({
+        to: updated.user.email,
+        donorName: updated.donorName,
+        campaignTitle: updated.campaign.title,
+        clientReference: updated.clientReference,
+        adminNote: updated.adminNote
+      });
+    }
+
+    res.json(serializeBankTransferIntent(updated));
   })
 );
 

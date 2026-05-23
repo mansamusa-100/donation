@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { prisma } from '../lib/prisma.js';
 import { serializeCampaign } from '../lib/serializers.js';
-import { isCampaignDonationWindowOpen } from '../lib/campaignEndsAt.js';
+import { assertCampaignAcceptsDonations } from '../lib/assertCampaignAcceptsDonations.js';
+import { HttpError } from '../lib/HttpError.js';
 import { waveCreateCheckoutSession, waveGetCheckoutSession } from '../lib/waveCheckout.js';
 import { finalizeWaveIntentFromCheckoutSession } from '../lib/waveFinalizeIntent.js';
 import { optionalAuthenticate, AuthRequest } from '../lib/auth.js';
@@ -37,11 +38,17 @@ function apsDonationsEnabled(): boolean {
   );
 }
 
-paymentsRouter.get('/providers', (_req, res) => {
+paymentsRouter.get(
+  '/providers',
+  asyncHandler(async (_req, res) => {
   const waveOk = waveDonationsEnabled();
   const apsCfg = apsDonationsEnabled();
   const yonnaCfg = yonnaDonationsEnabled();
   const easypay = easypayPartnerConfigured();
+  const bankAccountCount = await prisma.platformBankAccount.count({
+    where: { isActive: true }
+  });
+  const bankOk = bankAccountCount > 0;
   res.json({
     /** When true, Wave / APS / Yonna checkout uses Easypay partner API (single dashboard business). */
     easypayCheckout: easypay,
@@ -63,10 +70,17 @@ paymentsRouter.get('/providers', (_req, res) => {
         label: 'Yonna',
         configured: easypay || yonnaCfg,
         checkoutLive: easypay
+      },
+      {
+        id: 'bank',
+        label: 'Bank transfer',
+        configured: bankOk,
+        checkoutLive: bankOk
       }
     ] as const
   });
-});
+})
+);
 
 const waveSessionBodySchema = donationCheckoutBodySchema;
 
@@ -102,18 +116,14 @@ paymentsRouter.post(
       return;
     }
 
-    if (campaign.status !== 'Active') {
-      res.status(400).json({
-        message: 'This campaign is not accepting donations.'
-      });
-      return;
-    }
-
-    if (!isCampaignDonationWindowOpen(campaign.endsAt)) {
-      res.status(400).json({
-        message: 'This campaign has ended and is no longer accepting donations.'
-      });
-      return;
+    try {
+      await assertCampaignAcceptsDonations(campaign);
+    } catch (err) {
+      if (err instanceof HttpError) {
+        res.status(err.status).json({ message: err.message });
+        return;
+      }
+      throw err;
     }
 
     let donorDisplayName: string;

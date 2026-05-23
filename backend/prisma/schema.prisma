@@ -26,6 +26,13 @@ enum CampaignStatus {
   PendingReview
   Active
   Closed
+  Ended
+  Rejected
+}
+
+enum CampaignExtensionStatus {
+  Pending
+  Approved
   Rejected
 }
 
@@ -41,6 +48,19 @@ enum WithdrawalRequestStatus {
   Paid
 }
 
+enum PayoutMethodType {
+  Wallet
+  Bank
+  Cash
+}
+
+enum BankTransferStatus {
+  Pending
+  Confirmed
+  Rejected
+  Expired
+}
+
 model User {
   id              String    @id @default(cuid())
   email           String    @unique
@@ -53,11 +73,17 @@ model User {
   passwordResetToken   String?   @unique
   passwordResetExpires DateTime?
   campaigns       Campaign[]
+  extensionRequestsSubmitted CampaignExtensionRequest[] @relation("ExtensionRequestsByUser")
+  extensionRequestsReviewed  CampaignExtensionRequest[] @relation("ExtensionReviewsByAdmin")
   donations       Donation[]
   withdrawalRequests WithdrawalRequest[]
+  payoutMethods      UserPayoutMethod[]
+  withdrawalsMarkedPaid WithdrawalRequest[] @relation("WithdrawalPaidByAdmin")
   wavePaymentIntents WavePaymentIntent[]
   easypayPaymentIntents EasypayPaymentIntent[]
+  bankTransferIntents BankTransferIntent[]
   platformTips    PlatformTip[]
+  bankTransfersReviewed BankTransferIntent[] @relation("BankTransferReviewedBy")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
@@ -85,10 +111,16 @@ model Campaign {
   termsAcceptedAt         DateTime?
   isTrending       Boolean        @default(false)
   status           CampaignStatus @default(Active)
+  /// Owner confirmed they want to close; donations stop once all funds are Paid out.
+  ownerConfirmedEndAt DateTime?
+  /// When the campaign reached terminal Ended status.
+  endedAt          DateTime?
   donations        Donation[]
   withdrawalRequests WithdrawalRequest[]
+  extensionRequests CampaignExtensionRequest[]
   wavePaymentIntents WavePaymentIntent[]
   easypayPaymentIntents EasypayPaymentIntent[]
+  bankTransferIntents BankTransferIntent[]
   platformTips     PlatformTip[]
   creator          User?          @relation(fields: [creatorId], references: [id], onDelete: SetNull)
   createdAt        DateTime       @default(now())
@@ -156,10 +188,59 @@ model EasypayWebhookReceipt {
   @@unique([paymentId, event])
 }
 
+model PlatformBankAccount {
+  id            String   @id @default(cuid())
+  label         String?
+  accountName   String
+  bankName      String
+  accountNumber String
+  swiftCode     String
+  bban          String
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  bankTransfers BankTransferIntent[]
+}
+
+model BankTransferIntent {
+  id                    String             @id @default(cuid())
+  clientReference       String             @unique
+  campaignId            String
+  userId                String?
+  platformBankAccountId String
+  declaredAmount        Int
+  confirmedAmount       Int?
+  platformTipAmount     Int                @default(0)
+  currency              Currency           @default(GMD)
+  donorName             String
+  message               String?
+  isAnonymous           Boolean            @default(false)
+  avatarUrl             String?
+  status                BankTransferStatus @default(Pending)
+  adminNote             String?
+  reviewedById          String?
+  reviewedAt            DateTime?
+  expiresAt             DateTime
+  donationId            String?            @unique
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  campaign              Campaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user                  User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  platformBankAccount   PlatformBankAccount @relation(fields: [platformBankAccountId], references: [id], onDelete: Restrict)
+  reviewedBy            User?              @relation("BankTransferReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  donation              Donation?          @relation(fields: [donationId], references: [id], onDelete: SetNull)
+  platformTip           PlatformTip?
+
+  @@index([status, createdAt])
+  @@index([campaignId])
+}
+
 model PlatformTip {
   id                   String    @id @default(cuid())
   wavePaymentIntentId  String?   @unique
   easypayPaymentIntentId String? @unique
+  bankTransferIntentId String?   @unique
   userId               String?
   donorName            String
   amount               Int
@@ -168,10 +249,47 @@ model PlatformTip {
   createdAt            DateTime    @default(now())
   wavePaymentIntent    WavePaymentIntent? @relation(fields: [wavePaymentIntentId], references: [id], onDelete: SetNull)
   easypayPaymentIntent EasypayPaymentIntent? @relation(fields: [easypayPaymentIntentId], references: [id], onDelete: SetNull)
+  bankTransferIntent   BankTransferIntent?   @relation(fields: [bankTransferIntentId], references: [id], onDelete: SetNull)
   user                 User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
   campaign             Campaign?  @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
   @@index([campaignId])
+  @@index([userId])
+}
+
+model CampaignExtensionRequest {
+  id               String                  @id @default(cuid())
+  campaignId       String
+  requestedById    String
+  /// YYYY-MM-DD from the extension form (same as campaign create).
+  requestedEndDate String
+  requestedEndsAt  DateTime
+  reason           String?
+  status           CampaignExtensionStatus @default(Pending)
+  reviewedById     String?
+  reviewedAt       DateTime?
+  adminNote        String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  campaign         Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  requestedBy      User                    @relation("ExtensionRequestsByUser", fields: [requestedById], references: [id], onDelete: Cascade)
+  reviewedBy       User?                   @relation("ExtensionReviewsByAdmin", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([campaignId, status])
+  @@index([status, createdAt])
+}
+
+model UserPayoutMethod {
+  id        String           @id @default(cuid())
+  userId    String
+  type      PayoutMethodType
+  label     String?
+  isDefault Boolean          @default(false)
+  details   Json
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
 }
 
@@ -186,10 +304,19 @@ model WithdrawalRequest {
   status     WithdrawalRequestStatus @default(Pending)
   note       String?
   adminNote  String?
+  /// Snapshot from UserPayoutMethod at request time.
+  payoutMethodType PayoutMethodType?
+  payoutLabel      String?
+  payoutDetails    Json?
+  /// Admin-recorded proof when marking Paid (transfer ref, receipt note, etc.).
+  payoutReference  String?
+  paidAt           DateTime?
+  paidByAdminId    String?
   createdAt  DateTime                @default(now())
   updatedAt  DateTime                @updatedAt
   campaign   Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   user       User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paidBy     User?                   @relation("WithdrawalPaidByAdmin", fields: [paidByAdminId], references: [id], onDelete: SetNull)
 
   @@index([campaignId, status])
   @@index([userId, createdAt])
@@ -211,6 +338,7 @@ model Donation {
   user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   wavePaymentIntent WavePaymentIntent?
   easypayPaymentIntent EasypayPaymentIntent?
+  bankTransferIntent BankTransferIntent?
 
   @@index([campaignId, createdAt])
 }

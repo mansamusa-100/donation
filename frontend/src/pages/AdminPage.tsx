@@ -12,8 +12,10 @@ import {
   UserCog,
   UsersIcon,
   Wallet,
+  Building2,
   X
 } from 'lucide-react';
+import { BankAdminPanel } from '../components/admin/BankAdminPanel';
 import { useAuth } from '../context/AuthContext';
 import { BRAND_LOGO_SRC, BRAND_NAME } from '../lib/brand';
 import { api } from '../lib/api';
@@ -25,6 +27,7 @@ import {
   type AdminAuditLogItem,
   type AdminCampaign,
   type AdminCampaignStatus,
+  type AdminExtensionRequestRow,
   type AdminDashboardStats,
   type AdminPanelKey,
   type AdminUserRow,
@@ -65,6 +68,8 @@ function statusBadgeClass(status: AdminCampaignStatus) {
       return 'bg-red-100 text-red-800';
     case 'Closed':
       return 'bg-slate-200 text-slate-700';
+    case 'Ended':
+      return 'bg-slate-300 text-slate-800';
     default:
       return 'bg-slate-100 text-slate-600';
   }
@@ -87,7 +92,7 @@ function activityTypeLabel(type: string) {
     case 'ADMIN_PERMISSIONS_CHANGED':
       return 'Admin permissions';
     case 'EASYPAY_PROVISION':
-      return 'Easypay';
+      return 'DPay';
     default:
       return type;
   }
@@ -115,7 +120,8 @@ const PANEL_KEY_LABEL: Record<AdminPanelKey, string> = {
   withdrawals: 'Withdrawals',
   users: 'Users (activate/deactivate)',
   admins: 'Admins (create + permissions)',
-  easypay: 'Easypay (provision tenant)',
+  easypay: 'DPay (provision tenant)',
+  bank: 'Bank transfers (donations + accounts)',
   audit: 'Audit log (reporting)'
 };
 
@@ -142,7 +148,8 @@ const NAV_DEF: { id: AdminTab; label: string; icon: typeof LayoutDashboardIcon }
   { id: 'withdrawals', label: 'Withdrawals', icon: BanknoteIcon },
   { id: 'users', label: 'Users', icon: UsersIcon },
   { id: 'admins', label: 'Admins', icon: UserCog },
-  { id: 'easypay', label: 'Easypay', icon: Wallet },
+  { id: 'easypay', label: 'DPay', icon: Wallet },
+  { id: 'bank', label: 'Bank transfers', icon: Building2 },
   { id: 'audit', label: 'Audit log', icon: ScrollTextIcon }
 ];
 
@@ -245,12 +252,18 @@ export function AdminPage() {
   const [stats, setStats] = useState<AdminDashboardStats | null>(null);
   const [activity, setActivity] = useState<AdminActivityItem[]>([]);
   const [pending, setPending] = useState<AdminCampaign[]>([]);
+  const [extensionRequests, setExtensionRequests] = useState<AdminExtensionRequestRow[]>([]);
+  const [extensionTotal, setExtensionTotal] = useState(0);
+  const [busyExtensionId, setBusyExtensionId] = useState<string | null>(null);
   const [allCampaigns, setAllCampaigns] = useState<AdminCampaign[]>([]);
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [loadError, setLoadError] = useState('');
   const [busyCampaignId, setBusyCampaignId] = useState<string | null>(null);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [busyWithdrawalId, setBusyWithdrawalId] = useState<string | null>(null);
+  const [markPaidWithdrawal, setMarkPaidWithdrawal] = useState<AdminWithdrawalRequestRow | null>(null);
+  const [markPaidReference, setMarkPaidReference] = useState('');
+  const [markPaidAdminNote, setMarkPaidAdminNote] = useState('');
   const [withdrawals, setWithdrawals] = useState<AdminWithdrawalRequestRow[]>([]);
   const [actionError, setActionError] = useState('');
   const [adminAccounts, setAdminAccounts] = useState<AdminAccountRow[]>([]);
@@ -341,16 +354,22 @@ export function AdminPage() {
       }
       if (can('queue')) {
         fetches.push(
-          api
-            .getAdminPendingCampaigns({ page: queuePage, pageSize: ADMIN_TABLE_PAGE_SIZE })
-            .then((r) => {
-              setPending(r.items);
-              setQueueTotal(r.total);
-            })
+          (async () => {
+            const [pendingRes, extRes] = await Promise.all([
+              api.getAdminPendingCampaigns({ page: queuePage, pageSize: ADMIN_TABLE_PAGE_SIZE }),
+              api.getAdminPendingExtensionRequests({ page: 1, pageSize: 20 })
+            ]);
+            setPending(pendingRes.items);
+            setQueueTotal(pendingRes.total);
+            setExtensionRequests(extRes.items);
+            setExtensionTotal(extRes.total);
+          })()
         );
       } else {
         setPending([]);
         setQueueTotal(0);
+        setExtensionRequests([]);
+        setExtensionTotal(0);
       }
       if (can('campaigns')) {
         fetches.push(
@@ -531,9 +550,48 @@ export function AdminPage() {
     }
   };
 
+  const handleExtensionReview = async (
+    requestId: string,
+    status: 'Approved' | 'Rejected'
+  ) => {
+    if (status === 'Rejected' && !window.confirm('Reject this extension request?')) {
+      return;
+    }
+    setActionError('');
+    setBusyExtensionId(requestId);
+    try {
+      await api.reviewAdminExtensionRequest(requestId, { status });
+      await loadData();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Extension review failed');
+    } finally {
+      setBusyExtensionId(null);
+    }
+  };
+
+  const handleEndInactive = async (campaignId: string, title: string) => {
+    if (
+      !window.confirm(
+        `Mark "${title}" as Ended? This is for campaigns with no donation in 60+ days.`
+      )
+    ) {
+      return;
+    }
+    setActionError('');
+    setBusyCampaignId(campaignId);
+    try {
+      await api.endInactiveCampaign(campaignId);
+      await loadData();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not end campaign');
+    } finally {
+      setBusyCampaignId(null);
+    }
+  };
+
   const handleCampaignStatus = async (
     campaignId: string,
-    status: 'Active' | 'Rejected' | 'Closed'
+    status: 'Active' | 'Rejected' | 'Closed' | 'Ended'
   ) => {
     if (status === 'Rejected' && !window.confirm('Reject this campaign? It will be hidden from the public site.')) {
       return;
@@ -555,7 +613,8 @@ export function AdminPage() {
 
   const handleWithdrawalStatus = async (
     requestId: string,
-    status: 'Approved' | 'Rejected' | 'Paid'
+    status: 'Approved' | 'Rejected' | 'Paid',
+    extras?: { payoutReference?: string; adminNote?: string }
   ) => {
     if (status === 'Rejected' && !window.confirm('Reject this withdrawal request?')) {
       return;
@@ -563,13 +622,35 @@ export function AdminPage() {
     setActionError('');
     setBusyWithdrawalId(requestId);
     try {
-      await api.updateAdminWithdrawalRequest(requestId, { status });
+      await api.updateAdminWithdrawalRequest(requestId, {
+        status,
+        ...(extras?.payoutReference ? { payoutReference: extras.payoutReference } : {}),
+        ...(extras?.adminNote !== undefined ? { adminNote: extras.adminNote } : {})
+      });
+      setMarkPaidWithdrawal(null);
+      setMarkPaidReference('');
+      setMarkPaidAdminNote('');
       await loadData();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Update failed');
     } finally {
       setBusyWithdrawalId(null);
     }
+  };
+
+  const submitMarkPaid = () => {
+    if (!markPaidWithdrawal) {
+      return;
+    }
+    const ref = markPaidReference.trim();
+    if (!ref) {
+      setActionError('Enter a payout reference (transfer ID, receipt number, or cash handoff note).');
+      return;
+    }
+    void handleWithdrawalStatus(markPaidWithdrawal.id, 'Paid', {
+      payoutReference: ref,
+      adminNote: markPaidAdminNote.trim() || undefined
+    });
   };
 
   const handleUserToggle = async (row: AdminUserRow) => {
@@ -851,7 +932,9 @@ export function AdminPage() {
               {tab === 'users' && 'Activate or deactivate organizer and admin accounts.'}
               {tab === 'admins' && 'Create additional admins and choose which areas of the panel they may use. Empty permission list = full access.'}
               {tab === 'easypay' &&
-                'Provision a merchant tenant on Easypay (or replay safely with the same external user id). Copy businessId into server EASYPAY_PARTNER_BUSINESS_ID.'}
+                'Provision a merchant tenant on DPay (or replay safely with the same external user id). Copy businessId into server EASYPAY_PARTNER_BUSINESS_ID.'}
+              {tab === 'bank' &&
+                'Configure platform receiving accounts and confirm or reject inbound bank transfer donations. Enter the amount actually received when confirming.'}
               {tab === 'audit' &&
                 'Filter and export the activity ledger: campaign reviews, withdrawals, user activation, and admin account changes.'}
             </p>
@@ -975,7 +1058,48 @@ export function AdminPage() {
           )}
 
           {tab === 'queue' && (
-            <div className="space-y-4">
+            <div className="space-y-8">
+              {extensionTotal > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-lg font-display font-bold text-slate-900">
+                    Period extension requests ({extensionTotal})
+                  </h2>
+                  <div className="space-y-3">
+                    {extensionRequests.map((r) => (
+                      <article
+                        key={r.id}
+                        className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                        <h3 className="font-bold text-slate-900">{r.campaignTitle}</h3>
+                        <p className="text-sm text-slate-600 mt-1">
+                          {r.requestedBy.fullName} ({r.requestedBy.email}) · current end{' '}
+                          {formatDate(r.currentEndsAt)} → requested {r.requestedEndDate}
+                        </p>
+                        {r.reason && (
+                          <p className="text-sm text-slate-500 mt-2 italic">&ldquo;{r.reason}&rdquo;</p>
+                        )}
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={busyExtensionId === r.id}
+                            onClick={() => void handleExtensionReview(r.id, 'Approved')}
+                            className="px-4 py-2 rounded-lg bg-brand-600 text-white font-bold text-sm disabled:opacity-50">
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyExtensionId === r.id}
+                            onClick={() => void handleExtensionReview(r.id, 'Rejected')}
+                            className="px-4 py-2 rounded-lg border-2 border-red-200 text-red-700 font-bold text-sm disabled:opacity-50">
+                            Reject
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-4">
               <p className="text-slate-600 text-sm">
                 {queueTotal === 0
                   ? 'No campaigns are waiting for review.'
@@ -1048,6 +1172,7 @@ export function AdminPage() {
                 total={queueTotal}
                 onPageChange={setQueuePage}
               />
+              </div>
             </div>
           )}
 
@@ -1108,6 +1233,20 @@ export function AdminPage() {
                               </button>
                             </>
                           )}
+                          {c.status === 'Active' && c.inactive60Days && (
+                            <button
+                              type="button"
+                              disabled={busyCampaignId === c.id}
+                              onClick={() => void handleEndInactive(c.id, c.title)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold text-amber-900 border border-amber-200 bg-amber-50 disabled:opacity-50"
+                              title={
+                                c.lastDonationAt
+                                  ? `Last donation ${formatDate(c.lastDonationAt)}`
+                                  : 'No donations yet'
+                              }>
+                              End (60d inactive)
+                            </button>
+                          )}
                           {c.status === 'Active' && (
                             <button
                               type="button"
@@ -1147,6 +1286,7 @@ export function AdminPage() {
                       <th className="px-4 py-3">Requested</th>
                       <th className="px-4 py-3">Fee (3%)</th>
                       <th className="px-4 py-3">Net</th>
+                      <th className="px-4 py-3">Payout</th>
                       <th className="px-4 py-3">Status</th>
                       <th className="px-4 py-3">Date</th>
                       <th className="px-4 py-3 text-right">Actions</th>
@@ -1168,6 +1308,21 @@ export function AdminPage() {
                         <td className="px-4 py-3 font-bold text-slate-900">{formatGmd(w.amount)}</td>
                         <td className="px-4 py-3 text-slate-700">{formatGmd(w.processingFeeAmount)}</td>
                         <td className="px-4 py-3 font-semibold text-emerald-800">{formatGmd(w.netAmount)}</td>
+                        <td className="px-4 py-3 text-slate-700 max-w-[220px]">
+                          {w.payoutDetailsFull ? (
+                            <>
+                              <div className="text-xs font-bold text-slate-500">{w.payoutMethodType}</div>
+                              <div className="text-xs mt-0.5 break-words">{w.payoutDetailsFull}</div>
+                            </>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                          {w.payoutReference && (
+                            <div className="text-xs text-emerald-800 mt-1 font-medium">
+                              Ref: {w.payoutReference}
+                            </div>
+                          )}
+                        </td>
                         <td className="px-4 py-3">
                           <span
                             className={`text-xs font-bold px-2 py-0.5 rounded-md ${withdrawalStatusBadgeClass(w.status)}`}>
@@ -1204,7 +1359,12 @@ export function AdminPage() {
                               <button
                                 type="button"
                                 disabled={busyWithdrawalId === w.id}
-                                onClick={() => void handleWithdrawalStatus(w.id, 'Paid')}
+                                onClick={() => {
+                                  setMarkPaidWithdrawal(w);
+                                  setMarkPaidReference('');
+                                  setMarkPaidAdminNote('');
+                                  setActionError('');
+                                }}
                                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-700 text-white disabled:opacity-50">
                                 Mark paid
                               </button>
@@ -1503,12 +1663,14 @@ export function AdminPage() {
             </div>
           )}
 
+          {tab === 'bank' && canAccess('bank') && <BankAdminPanel />}
+
           {tab === 'easypay' && canAccess('easypay') && (
             <div className="max-w-2xl space-y-6">
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
-                <h2 className="font-display font-bold text-lg text-slate-900">Easypay business provision</h2>
+                <h2 className="font-display font-bold text-lg text-slate-900">DPay business provision</h2>
                 <p className="text-sm text-slate-600">
-                  Calls Easypay <code className="text-xs bg-slate-100 px-1 rounded">POST /provision</code> with your
+                  Calls DPay <code className="text-xs bg-slate-100 px-1 rounded">POST /provision</code> with your
                   partner credentials. Use a stable <strong>External user id</strong> so repeats do not create duplicate
                   tenants. After success, set <code className="text-xs bg-slate-100 px-1">EASYPAY_PARTNER_BUSINESS_ID</code>{' '}
                   on the API server to the returned <strong>businessId</strong>.
@@ -1629,14 +1791,14 @@ export function AdminPage() {
                       placeholder="https://…/api/payments/easypay/webhook"
                     />
                     <p className="mt-1 text-xs text-slate-500">
-                      Leave blank to omit; Easypay will use their default partner webhook if configured.
+                      Leave blank to omit; DPay will use their default partner webhook if configured.
                     </p>
                   </div>
                   <button
                     type="submit"
                     disabled={easypaySubmitting}
                     className="px-4 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-bold hover:bg-brand-700 disabled:opacity-50">
-                    {easypaySubmitting ? 'Provisioning…' : 'Provision on Easypay'}
+                    {easypaySubmitting ? 'Provisioning…' : 'Provision on DPay'}
                   </button>
                 </form>
               </div>
@@ -1795,6 +1957,71 @@ export function AdminPage() {
           )}
         </div>
       </div>
+
+      {markPaidWithdrawal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mark-paid-title">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 border border-slate-200">
+            <h2 id="mark-paid-title" className="text-lg font-display font-bold text-slate-900">
+              Mark withdrawal as paid
+            </h2>
+            <p className="text-sm text-slate-600 mt-1">
+              Net to pay: <strong className="text-emerald-800">{formatGmd(markPaidWithdrawal.netAmount)}</strong>{' '}
+              — {markPaidWithdrawal.campaign.title}
+            </p>
+            <div className="mt-4 p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm">
+              <p className="text-xs font-bold text-slate-500 uppercase">{markPaidWithdrawal.payoutMethodType}</p>
+              <p className="text-slate-800 mt-1 break-words">
+                {markPaidWithdrawal.payoutDetailsFull ?? 'No payout details on file'}
+              </p>
+              <p className="text-xs text-slate-500 mt-2">
+                Complete the transfer outside the app, then record proof below.
+              </p>
+            </div>
+            <label className="block mt-4 text-sm font-semibold text-slate-700" htmlFor="payout-ref">
+              Payout reference <span className="text-red-600">*</span>
+            </label>
+            <input
+              id="payout-ref"
+              type="text"
+              value={markPaidReference}
+              onChange={(e) => setMarkPaidReference(e.target.value)}
+              placeholder="e.g. Wave txn ID, bank transfer ref, cash receipt"
+              maxLength={255}
+              className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+            />
+            <label className="block mt-3 text-sm font-semibold text-slate-700" htmlFor="payout-admin-note">
+              Admin note (optional)
+            </label>
+            <input
+              id="payout-admin-note"
+              type="text"
+              value={markPaidAdminNote}
+              onChange={(e) => setMarkPaidAdminNote(e.target.value)}
+              maxLength={500}
+              className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+            />
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMarkPaidWithdrawal(null)}
+                className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-700">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busyWithdrawalId === markPaidWithdrawal.id}
+                onClick={() => submitMarkPaid()}
+                className="px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-bold disabled:opacity-50">
+                {busyWithdrawalId === markPaidWithdrawal.id ? 'Saving…' : 'Confirm paid'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import type { Campaign, EasypayPaymentIntent } from '@prisma/client';
 import { prisma } from './prisma.js';
 import { applyDonationToLedger, recordPlatformTip } from './processDonationLedger.js';
 import { serializeCampaign } from './serializers.js';
+import { tryFinalizeCampaignEnded } from './campaignLifecycle.js';
 import { sendDonationThankYouEmail } from './mail.js';
 
 function parseGmdTotal(value: unknown): number | null {
@@ -84,6 +85,8 @@ export async function finalizeEasypayIntentPaid(params: {
         });
       }
     }
+
+    await tryFinalizeCampaignEnded(tx, intent.campaignId);
   });
 
   if (intent.userId) {

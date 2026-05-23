@@ -85,6 +85,8 @@ export function CampaignDetailPage() {
   }
 
   const progress = (campaign.raisedAmount / campaign.goalAmount) * 100;
+  const acceptingDonations = campaign.acceptingDonations !== false;
+  const showPeriodEndedBanner = campaign.fundraisingPeriodEnded && acceptingDonations;
 
   return (
     <div className="bg-surface-50 min-h-screen pb-24">
@@ -105,6 +107,20 @@ export function CampaignDetailPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+        {showPeriodEndedBanner && (
+          <div
+            role="status"
+            className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <strong className="font-bold">Fundraising period ended.</strong> Donations still accepted.
+          </div>
+        )}
+        {!acceptingDonations && (
+          <div
+            role="status"
+            className="mb-6 rounded-xl border border-surface-200 bg-surface-100 px-4 py-3 text-sm text-surface-700">
+            This campaign has ended and is no longer accepting donations.
+          </div>
+        )}
         <div className="flex flex-col lg:flex-row gap-8 items-start">
           <div className="w-full lg:w-2/3 space-y-8">
             {campaign.galleryImages && campaign.galleryImages.length > 0 && (
@@ -218,7 +234,8 @@ export function CampaignDetailPage() {
               <button
                 type="button"
                 onClick={() => setIsDonateModalOpen(true)}
-                className="w-full py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all flex justify-center items-center gap-2 mb-4">
+                disabled={!acceptingDonations}
+                className="w-full py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all flex justify-center items-center gap-2 mb-4 disabled:opacity-50 disabled:cursor-not-allowed">
                 Donate Now <HeartIcon className="w-5 h-5 fill-current" />
               </button>
 
@@ -235,14 +252,16 @@ export function CampaignDetailPage() {
         </div>
       </div>
 
-      <div className="lg:hidden fixed bottom-0 left-0 w-full p-4 bg-white border-t border-surface-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-30">
-        <button
-          type="button"
-          onClick={() => setIsDonateModalOpen(true)}
-          className="w-full py-4 bg-brand-600 text-white rounded-xl font-bold text-lg shadow-lg">
-          Donate Now
-        </button>
-      </div>
+      {acceptingDonations && (
+        <div className="lg:hidden fixed bottom-0 left-0 w-full p-4 bg-white border-t border-surface-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-30">
+          <button
+            type="button"
+            onClick={() => setIsDonateModalOpen(true)}
+            className="w-full py-4 bg-brand-600 text-white rounded-xl font-bold text-lg shadow-lg">
+            Donate Now
+          </button>
+        </div>
+      )}
 
       <DonateModal
         isOpen={isDonateModalOpen}

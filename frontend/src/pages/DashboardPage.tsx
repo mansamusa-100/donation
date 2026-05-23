@@ -16,6 +16,8 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { mediaUrl } from '../lib/mediaUrl';
 import { DataLoadAlert } from '../components/DataLoadAlert';
+import { PayoutMethodsPanel } from '../components/PayoutMethodsPanel';
+import type { UserPayoutMethod } from '../types/payout';
 import type {
   Campaign,
   CampaignStatus,
@@ -49,6 +51,8 @@ function statusBadgeClass(status: CampaignStatus | undefined) {
       return 'bg-red-100 text-red-800';
     case 'Closed':
       return 'bg-surface-200 text-surface-700';
+    case 'Ended':
+      return 'bg-surface-300 text-surface-800';
     default:
       return 'bg-surface-100 text-surface-600';
   }
@@ -67,7 +71,10 @@ export function DashboardPage() {
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [withdrawalBusySlug, setWithdrawalBusySlug] = useState<string | null>(null);
+  const [lifecycleBusySlug, setLifecycleBusySlug] = useState<string | null>(null);
+  const [lifecycleFormError, setLifecycleFormError] = useState('');
   const [withdrawalFormError, setWithdrawalFormError] = useState('');
+  const [payoutMethods, setPayoutMethods] = useState<UserPayoutMethod[]>([]);
   const [celebration, setCelebration] = useState<CampaignSubmissionCelebration | null>(null);
 
   useEffect(() => {
@@ -92,8 +99,12 @@ export function DashboardPage() {
     setLoadState('loading');
     setErrorMessage('');
     try {
-      const overview = await api.getCreatorDashboard();
+      const [overview, methods] = await Promise.all([
+        api.getCreatorDashboard(),
+        api.getPayoutMethods().catch(() => [] as UserPayoutMethod[])
+      ]);
       setData(overview);
+      setPayoutMethods(methods);
       setLoadState('ready');
     } catch (err) {
       console.error('Dashboard load failed:', err);
@@ -103,11 +114,69 @@ export function DashboardPage() {
     }
   }, []);
 
-  const submitWithdrawal = async (slug: string, amount: number, note: string) => {
+  const refreshPayoutMethods = useCallback(async () => {
+    try {
+      setPayoutMethods(await api.getPayoutMethods());
+    } catch (err) {
+      console.error('Payout methods refresh failed:', err);
+    }
+  }, []);
+
+  const handleConfirmEnd = async (slug: string) => {
+    if (
+      !window.confirm(
+        'Confirm end of campaign? Donations will stop once all raised funds have been paid out via withdrawals.'
+      )
+    ) {
+      return;
+    }
+    setLifecycleFormError('');
+    setLifecycleBusySlug(slug);
+    try {
+      await api.confirmCampaignEnd(slug);
+      await load();
+    } catch (err) {
+      setLifecycleFormError(err instanceof Error ? err.message : 'Could not confirm end');
+    } finally {
+      setLifecycleBusySlug(null);
+    }
+  };
+
+  const handleRequestExtension = async (
+    slug: string,
+    campaignEndDate: string,
+    reason: string
+  ) => {
+    setLifecycleFormError('');
+    setLifecycleBusySlug(slug);
+    try {
+      await api.requestCampaignExtension(slug, {
+        campaignEndDate,
+        reason: reason || undefined
+      });
+      await load();
+    } catch (err) {
+      setLifecycleFormError(err instanceof Error ? err.message : 'Extension request failed');
+    } finally {
+      setLifecycleBusySlug(null);
+    }
+  };
+
+  const submitWithdrawal = async (
+    slug: string,
+    amount: number,
+    payoutMethodId: string,
+    note: string
+  ) => {
     setWithdrawalFormError('');
     setWithdrawalBusySlug(slug);
     try {
-      await api.createWithdrawalRequest({ campaignSlug: slug, amount, note: note || undefined });
+      await api.createWithdrawalRequest({
+        campaignSlug: slug,
+        amount,
+        payoutMethodId,
+        note: note || undefined
+      });
       await load();
     } catch (err) {
       setWithdrawalFormError(err instanceof Error ? err.message : 'Withdrawal request failed');
@@ -262,11 +331,15 @@ export function DashboardPage() {
               </div>
             </div>
 
+            <div className="mb-8">
+              <PayoutMethodsPanel onUpdated={() => void refreshPayoutMethods()} />
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-6">
-                {withdrawalFormError && (
+                {(withdrawalFormError || lifecycleFormError) && (
                   <div className="p-4 rounded-xl bg-red-50 border border-red-100 text-red-800 text-sm font-medium">
-                    {withdrawalFormError}
+                    {withdrawalFormError || lifecycleFormError}
                   </div>
                 )}
 
@@ -307,6 +380,14 @@ export function DashboardPage() {
                                 View campaign
                               </Link>
                             </p>
+                            {w.payoutSummary && (
+                              <p className="text-xs text-surface-600 mt-1">Payout: {w.payoutSummary}</p>
+                            )}
+                            {w.payoutReference && (
+                              <p className="text-xs text-emerald-800 mt-0.5">
+                                Paid — ref: {w.payoutReference}
+                              </p>
+                            )}
                             {w.note && (
                               <p className="text-xs text-surface-600 mt-1 italic">&quot;{w.note}&quot;</p>
                             )}
@@ -342,8 +423,11 @@ export function DashboardPage() {
                       <CampaignRow
                         key={c.id}
                         campaign={c}
-                        busy={withdrawalBusySlug === c.slug}
+                        payoutMethods={payoutMethods}
+                        busy={withdrawalBusySlug === c.slug || lifecycleBusySlug === c.slug}
                         onWithdraw={submitWithdrawal}
+                        onConfirmEnd={handleConfirmEnd}
+                        onRequestExtension={handleRequestExtension}
                       />
                     ))}
                   </div>
@@ -423,19 +507,41 @@ export function DashboardPage() {
 
 function CampaignRow({
   campaign,
+  payoutMethods,
   onWithdraw,
+  onConfirmEnd,
+  onRequestExtension,
   busy
 }: {
   campaign: Campaign;
-  onWithdraw: (slug: string, amount: number, note: string) => Promise<void>;
+  payoutMethods: UserPayoutMethod[];
+  onWithdraw: (slug: string, amount: number, payoutMethodId: string, note: string) => Promise<void>;
+  onConfirmEnd: (slug: string) => Promise<void>;
+  onRequestExtension: (slug: string, endDate: string, reason: string) => Promise<void>;
   busy: boolean;
 }) {
   const [wAmount, setWAmount] = useState('');
   const [wNote, setWNote] = useState('');
+  const defaultMethodId =
+    payoutMethods.find((m) => m.isDefault)?.id ?? payoutMethods[0]?.id ?? '';
+  const [payoutMethodId, setPayoutMethodId] = useState(defaultMethodId);
+  const [extDate, setExtDate] = useState('');
+  const [extReason, setExtReason] = useState('');
+  const [showExtensionForm, setShowExtensionForm] = useState(false);
   const progress = Math.min(100, Math.round((campaign.raisedAmount / campaign.goalAmount) * 100));
   const status = campaign.status ?? 'Active';
   const available = campaign.availableForWithdrawal ?? 0;
   const canWithdraw = (status === 'Active' || status === 'Closed') && available > 0;
+  const fundraisingPeriodEnded = campaign.fundraisingPeriodEnded === true;
+  const acceptingDonations = campaign.acceptingDonations !== false;
+  const canConfirmEnd = campaign.canConfirmEnd === true;
+  const pendingExtension = campaign.pendingExtension;
+
+  useEffect(() => {
+    if (!payoutMethodId && defaultMethodId) {
+      setPayoutMethodId(defaultMethodId);
+    }
+  }, [defaultMethodId, payoutMethodId]);
 
   const handleWithdrawSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -443,7 +549,10 @@ function CampaignRow({
     if (!Number.isFinite(n) || n < 1) {
       return;
     }
-    await onWithdraw(campaign.slug, n, wNote.trim());
+    if (!payoutMethodId) {
+      return;
+    }
+    await onWithdraw(campaign.slug, n, payoutMethodId, wNote.trim());
     setWAmount('');
     setWNote('');
   };
@@ -474,6 +583,22 @@ function CampaignRow({
               <span className="font-bold text-surface-900">D{available.toLocaleString()}</span>
             </p>
           )}
+          {fundraisingPeriodEnded && acceptingDonations && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 mt-2">
+              Fundraising period ended. Donations still accepted.
+            </p>
+          )}
+          {campaign.ownerConfirmedEndAt && acceptingDonations && (
+            <p className="text-xs text-surface-600 mt-2">
+              You confirmed end — donations stop after all funds are paid out (
+              {campaign.allFundsPaidOut ? 'complete' : 'pending payout'}).
+            </p>
+          )}
+          {pendingExtension && (
+            <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1.5 mt-2">
+              Extension to {pendingExtension.requestedEndDate} pending admin approval.
+            </p>
+          )}
         </div>
         <div className="flex flex-col gap-2 w-full sm:w-auto shrink-0">
           {status === 'Active' && (
@@ -491,11 +616,105 @@ function CampaignRow({
         </div>
       </div>
 
+      {status === 'Active' && (
+        <div className="pl-0 sm:pl-24 border-t border-surface-100 pt-4 flex flex-wrap gap-2">
+          {canConfirmEnd && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onConfirmEnd(campaign.slug)}
+              className="px-3 py-2 rounded-lg border border-surface-300 text-sm font-semibold text-surface-800 hover:bg-surface-50 disabled:opacity-50">
+              Confirm end of campaign
+            </button>
+          )}
+          {!pendingExtension && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setShowExtensionForm((v) => !v)}
+              className="px-3 py-2 rounded-lg border border-brand-200 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50">
+              {showExtensionForm ? 'Cancel extension' : 'Request period extension'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {showExtensionForm && status === 'Active' && !pendingExtension && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!extDate) {
+              return;
+            }
+            void onRequestExtension(campaign.slug, extDate, extReason.trim()).then(() => {
+              setShowExtensionForm(false);
+              setExtDate('');
+              setExtReason('');
+            });
+          }}
+          className="pl-0 sm:pl-24 border-t border-surface-100 pt-4 space-y-3">
+          <p className="text-xs font-semibold text-surface-700 uppercase tracking-wide">
+            Request extension (admin must approve)
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+            <input
+              id={`ext-date-${campaign.id}`}
+              type="date"
+              value={extDate}
+              onChange={(e) => setExtDate(e.target.value)}
+              aria-label="New end date"
+              required
+              disabled={busy}
+              className="px-3 py-2 border border-surface-200 rounded-lg text-sm"
+            />
+            <input
+              type="text"
+              value={extReason}
+              onChange={(e) => setExtReason(e.target.value)}
+              placeholder="Reason (optional)"
+              maxLength={500}
+              disabled={busy}
+              className="flex-1 px-3 py-2 border border-surface-200 rounded-lg text-sm"
+            />
+            <button
+              type="submit"
+              disabled={busy || !extDate}
+              className="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-bold disabled:opacity-50">
+              Submit request
+            </button>
+          </div>
+        </form>
+      )}
+
       {canWithdraw && (
         <form
           onSubmit={(e) => void handleWithdrawSubmit(e)}
           className="pl-0 sm:pl-24 border-t border-surface-100 pt-4 space-y-3">
           <p className="text-xs font-semibold text-surface-700 uppercase tracking-wide">Request withdrawal</p>
+          {payoutMethods.length === 0 ? (
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+              Add a payout method above before requesting a withdrawal.
+            </p>
+          ) : (
+            <div>
+              <label htmlFor={`wd-payout-${campaign.id}`} className="block text-xs font-medium text-surface-600 mb-1">
+                Pay out via
+              </label>
+              <select
+                id={`wd-payout-${campaign.id}`}
+                value={payoutMethodId}
+                onChange={(e) => setPayoutMethodId(e.target.value)}
+                className="w-full max-w-md px-3 py-2 border border-surface-200 rounded-lg text-sm"
+                disabled={busy}>
+                {payoutMethods.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.type} — {m.summary}
+                    {m.isDefault ? ' (default)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
             <div className="flex-1 min-w-0">
               <label htmlFor={`wd-amount-${campaign.id}`} className="sr-only">
@@ -531,7 +750,7 @@ function CampaignRow({
             </div>
             <button
               type="submit"
-              disabled={busy}
+              disabled={busy || payoutMethods.length === 0 || !payoutMethodId}
               className="px-4 py-2 rounded-lg bg-surface-900 text-white text-sm font-bold hover:bg-surface-800 disabled:opacity-50">
               {busy ? 'Sending…' : 'Submit request'}
             </button>

@@ -1,3 +1,5 @@
+import type { WithdrawalPayoutInfo } from './payout';
+
 export type Category =
   | 'Medical'
   | 'Education'
@@ -19,7 +21,36 @@ export type CampaignStatus =
   | 'PendingReview'
   | 'Active'
   | 'Closed'
+  | 'Ended'
   | 'Rejected';
+
+export interface CampaignLifecycleMeta {
+  fundraisingPeriodEnded: boolean;
+  acceptingDonations: boolean;
+  fullyEnded: boolean;
+  ownerConfirmedEndAt: string | null;
+  endedAt: string | null;
+  allFundsPaidOut: boolean;
+  paidWithdrawalTotal: number;
+  availableForWithdrawal: number;
+  canConfirmEnd: boolean;
+  lastDonationAt?: string | null;
+  inactive60Days?: boolean;
+  pendingExtension?: {
+    id: string;
+    requestedEndDate: string;
+    status: string;
+  } | null;
+}
+
+export interface CampaignExtensionRequestSummary {
+  id: string;
+  campaignId: string;
+  requestedEndDate: string;
+  status: string;
+  reason: string | null;
+  createdAt: string;
+}
 
 export interface CategorySummary {
   name: Category;
@@ -67,8 +98,16 @@ export interface Campaign {
   status?: CampaignStatus;
   createdAt?: string;
   recentDonors: Donor[];
-  /** Present on creator dashboard: raised balance not yet tied up in withdrawal requests. */
+  /** Present on creator dashboard / detail when lifecycle fields are included. */
   availableForWithdrawal?: number;
+  fundraisingPeriodEnded?: boolean;
+  acceptingDonations?: boolean;
+  fullyEnded?: boolean;
+  ownerConfirmedEndAt?: string | null;
+  endedAt?: string | null;
+  allFundsPaidOut?: boolean;
+  canConfirmEnd?: boolean;
+  pendingExtension?: CampaignLifecycleMeta['pendingExtension'];
 }
 
 export type WithdrawalRequestStatus =
@@ -77,7 +116,7 @@ export type WithdrawalRequestStatus =
   | 'Rejected'
   | 'Paid';
 
-export interface CreatorWithdrawalRequest {
+export interface CreatorWithdrawalRequest extends WithdrawalPayoutInfo {
   id: string;
   campaignId: string;
   campaignTitle: string;

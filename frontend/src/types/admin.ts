@@ -1,9 +1,26 @@
+import type { WithdrawalPayoutInfo } from './payout';
+
 export type AdminCampaignStatus =
   | 'Draft'
   | 'PendingReview'
   | 'Active'
   | 'Closed'
+  | 'Ended'
   | 'Rejected';
+
+export interface AdminExtensionRequestRow {
+  id: string;
+  campaignId: string;
+  campaignTitle: string;
+  campaignSlug: string;
+  currentEndsAt: string;
+  requestedEndDate: string;
+  requestedEndsAt: string;
+  reason: string | null;
+  status: string;
+  requestedBy: { id: string; fullName: string; email: string };
+  createdAt: string;
+}
 
 export interface AdminCampaignCreator {
   id: string;
@@ -33,6 +50,8 @@ export interface AdminCampaign {
   termsAcceptedAt?: string | null;
   isTrending: boolean;
   status: AdminCampaignStatus;
+  lastDonationAt?: string | null;
+  inactive60Days?: boolean;
   creatorId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -88,6 +107,7 @@ export type AdminPanelKey =
   | 'users'
   | 'admins'
   | 'easypay'
+  | 'bank'
   | 'audit';
 
 /** Known event types stored in ActivityLog (extend as you add recordActivity calls). */
@@ -99,7 +119,9 @@ export const AUDIT_EVENT_TYPES = [
   'WITHDRAWAL_STATUS_CHANGED',
   'ADMIN_ACCOUNT_CREATED',
   'ADMIN_PERMISSIONS_CHANGED',
-  'EASYPAY_PROVISION'
+  'EASYPAY_PROVISION',
+  'BANK_TRANSFER_CONFIRMED',
+  'BANK_TRANSFER_REJECTED'
 ] as const;
 
 export interface AdminAuditLogItem extends AdminActivityItem {
@@ -126,7 +148,7 @@ export interface AdminAccountRow {
 
 export type AdminWithdrawalStatus = 'Pending' | 'Approved' | 'Rejected' | 'Paid';
 
-export interface AdminWithdrawalRequestRow {
+export interface AdminWithdrawalRequestRow extends WithdrawalPayoutInfo {
   id: string;
   campaignId: string;
   userId: string;

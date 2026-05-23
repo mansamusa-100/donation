@@ -193,7 +193,7 @@ export function PaymentEasypayPendingPage() {
       <div className="min-h-[60vh] flex flex-col items-center justify-center px-4 py-16 text-center max-w-md mx-auto space-y-4">
         <h1 className="font-display font-bold text-xl text-surface-900">Still processing</h1>
         <p className="text-surface-600 text-sm">
-          If your wallet was debited, Easypay may still be notifying us. Check the campaign page — the donation usually
+          If your wallet was debited, DPay may still be notifying us. Check the campaign page — the donation usually
           appears within a minute. Keep this reference if you contact support.
         </p>
         <p className="text-xs text-surface-400 font-mono break-all">Reference: {ref}</p>
@@ -220,15 +220,15 @@ export function PaymentEasypayPendingPage() {
         </h1>
         <p className="text-surface-600 text-sm">
           {mobile
-            ? 'Open your wallet app to approve. After you pay, keep this page open — we will confirm as soon as Easypay notifies us.'
+            ? 'Open your wallet app to approve. After you pay, keep this page open — we will confirm as soon as DPay notifies us.'
             : 'On desktop you can use the secure checkout below or scan the QR code with your wallet app. Keep this tab open until you see the thank-you message.'}
         </p>
 
         {!mobile && paymentHtml ? (
           <div className="rounded-2xl border border-surface-200 bg-white overflow-hidden text-left shadow-sm">
-            <p className="text-xs font-semibold text-surface-500 px-3 pt-3 pb-1">Easypay checkout</p>
+            <p className="text-xs font-semibold text-surface-500 px-3 pt-3 pb-1">DPay checkout</p>
             <iframe
-              title="Easypay wallet checkout"
+              title="DPay wallet checkout"
               srcDoc={paymentHtml}
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
               className="w-full min-h-[420px] border-0 bg-white"
@@ -284,7 +284,7 @@ export function PaymentEasypayPendingPage() {
 
         <div className="flex items-center justify-center gap-2 text-sm text-surface-500">
           <Loader2Icon className="w-4 h-4 animate-spin text-brand-600" />
-          Waiting for Easypay confirmation…
+          Waiting for DPay confirmation…
         </div>
         <p className="text-xs text-surface-400 font-mono break-all">Reference: {ref}</p>
       </div>

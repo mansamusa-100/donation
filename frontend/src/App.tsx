@@ -47,6 +47,10 @@ const PaymentWaveReturnPage = lazy(async () => ({
   default: (await import('./pages/PaymentWaveReturnPage')).PaymentWaveReturnPage
 }));
 
+const PaymentBankPendingPage = lazy(async () => ({
+  default: (await import('./pages/PaymentBankPendingPage')).PaymentBankPendingPage
+}));
+
 const PaymentEasypayReturnPage = lazy(async () => ({
   default: (await import('./pages/PaymentEasypayReturnPage')).PaymentEasypayReturnPage
 }));
@@ -125,6 +129,7 @@ function AppChrome() {
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/payment/wave/return" element={<PaymentWaveReturnPage />} />
             <Route path="/payment/easypay/pending" element={<PaymentEasypayPendingPage />} />
+            <Route path="/payment/bank/pending" element={<PaymentBankPendingPage />} />
             <Route path="/payment/easypay/return" element={<PaymentEasypayReturnPage />} />
             <Route path="/pricing" element={<PricingFeesPage />} />
             <Route path="/help" element={<HelpCenterPage />} />

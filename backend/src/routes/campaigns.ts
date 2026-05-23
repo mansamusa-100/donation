@@ -10,7 +10,8 @@ import {
   notifyAdminsCampaignSubmitted,
   sendCampaignCreatedConfirmation,
   sendDonationThankYouEmail,
-  sendWithdrawalRequestReceivedEmail
+  sendWithdrawalRequestReceivedEmail,
+  notifyAdminsWithdrawalRequested
 } from '../lib/mail.js';
 import {
   withdrawalNetToOrganizer,
@@ -21,9 +22,17 @@ import { applyDonationToLedger, recordPlatformTip } from '../lib/processDonation
 import { HttpError } from '../lib/HttpError.js';
 import {
   computeDaysLeftFromEndsAt,
-  isCampaignDonationWindowOpen,
   validateNewCampaignEndDate
 } from '../lib/campaignEndsAt.js';
+import { assertCampaignAcceptsDonations } from '../lib/assertCampaignAcceptsDonations.js';
+import {
+  canOwnerConfirmEnd,
+  canRequestWithdrawal,
+  isFundraisingPeriodEnded,
+  tryFinalizeCampaignEnded
+} from '../lib/campaignLifecycle.js';
+import { serializeCampaignWithLifecycle } from '../lib/serializeCampaignWithLifecycle.js';
+import { serializeWithdrawalPayout } from '../lib/payoutMethods.js';
 
 const campaignQuerySchema = z.object({
   search: z.string().trim().optional(),
@@ -110,6 +119,7 @@ const createDonationSchema = z.object({
 const createWithdrawalRequestSchema = z.object({
   campaignSlug: z.string().min(1),
   amount: z.number().int().positive(),
+  payoutMethodId: z.string().min(1),
   note: z.string().max(500).optional()
 });
 
@@ -178,9 +188,20 @@ campaignsRouter.get(
       }
     });
 
-    res.json(campaigns.map(serializeCampaign));
+    res.json(
+      campaigns.map((c) => ({
+        ...serializeCampaign(c),
+        fundraisingPeriodEnded: isFundraisingPeriodEnded(c.endsAt),
+        acceptingDonations: c.status === 'Active' && c.ownerConfirmedEndAt == null
+      }))
+    );
   })
 );
+
+const extensionRequestSchema = z.object({
+  campaignEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  reason: z.string().max(500).optional()
+});
 
 campaignsRouter.get(
   '/mine/overview',
@@ -231,23 +252,6 @@ campaignsRouter.get(
       totalGiven: donationsMade.reduce((sum, d) => sum + d.amount, 0)
     };
 
-    const campaignIds = campaigns.map((c) => c.id);
-    const committedByCampaign =
-      campaignIds.length === 0
-        ? []
-        : await prisma.withdrawalRequest.groupBy({
-            by: ['campaignId'],
-            where: {
-              campaignId: { in: campaignIds },
-              status: { in: ['Pending', 'Approved', 'Paid'] }
-            },
-            _sum: { amount: true }
-          });
-
-    const committedMap = Object.fromEntries(
-      committedByCampaign.map((row) => [row.campaignId, row._sum.amount ?? 0])
-    );
-
     const withdrawalRows = await prisma.withdrawalRequest.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -257,14 +261,30 @@ campaignsRouter.get(
       }
     });
 
+    const pendingExtensions = await prisma.campaignExtensionRequest.findMany({
+      where: {
+        campaignId: { in: campaigns.map((c) => c.id) },
+        status: 'Pending'
+      },
+      select: { id: true, campaignId: true, requestedEndDate: true, status: true }
+    });
+    const extByCampaign = new Map(
+      pendingExtensions.map((e) => [
+        e.campaignId,
+        { id: e.id, requestedEndDate: e.requestedEndDate, status: e.status }
+      ])
+    );
+
+    const serializedCampaigns = await Promise.all(
+      campaigns.map((c) =>
+        serializeCampaignWithLifecycle(c, {
+          pendingExtension: extByCampaign.get(c.id) ?? null
+        })
+      )
+    );
+
     res.json({
-      campaigns: campaigns.map((c) => ({
-        ...serializeCampaign(c),
-        availableForWithdrawal: Math.max(
-          0,
-          c.raisedAmount - (committedMap[c.id] ?? 0)
-        )
-      })),
+      campaigns: serializedCampaigns,
       withdrawalRequests: withdrawalRows.map((w) => ({
         id: w.id,
         campaignId: w.campaignId,
@@ -277,7 +297,8 @@ campaignsRouter.get(
         status: w.status,
         note: w.note,
         createdAt: w.createdAt.toISOString(),
-        updatedAt: w.updatedAt.toISOString()
+        updatedAt: w.updatedAt.toISOString(),
+        ...serializeWithdrawalPayout(w)
       })),
       recentDonations: recentDonations.map((d) => ({
         id: d.id,
@@ -331,7 +352,7 @@ campaignsRouter.post(
           );
         }
 
-        if (campaign.status !== 'Active' && campaign.status !== 'Closed') {
+        if (!canRequestWithdrawal(campaign.status)) {
           throw new HttpError(
             400,
             'Withdrawals are only available for campaigns that are active or closed'
@@ -356,6 +377,16 @@ campaignsRouter.post(
           );
         }
 
+        const payoutMethod = await tx.userPayoutMethod.findFirst({
+          where: { id: body.payoutMethodId, userId }
+        });
+        if (!payoutMethod) {
+          throw new HttpError(
+            400,
+            'Select a valid payout method. Add one under Payout settings on your dashboard first.'
+          );
+        }
+
         const processingFeeAmount = withdrawalProcessingFeeFromGross(body.amount);
         const netAmount = withdrawalNetToOrganizer(body.amount);
 
@@ -368,11 +399,14 @@ campaignsRouter.post(
             netAmount,
             currency: 'GMD',
             note: body.note?.trim() || null,
-            status: 'Pending'
+            status: 'Pending',
+            payoutMethodType: payoutMethod.type,
+            payoutLabel: payoutMethod.label,
+            payoutDetails: payoutMethod.details as Prisma.InputJsonValue
           },
           include: {
             campaign: { select: { title: true, slug: true } },
-            user: { select: { email: true, fullName: true } }
+            user: { select: { email: true, fullName: true, phoneNumber: true } }
           }
         });
       },
@@ -381,39 +415,72 @@ campaignsRouter.post(
       }
     );
 
-    if (wr.user?.email) {
+    const wrWithRelations = wr as Prisma.WithdrawalRequestGetPayload<{
+      include: {
+        campaign: { select: { title: true; slug: true } };
+        user: { select: { email: true; fullName: true; phoneNumber: true } };
+      };
+    }>;
+
+    const payoutEmailFields = {
+      payoutMethodType: wrWithRelations.payoutMethodType,
+      payoutLabel: wrWithRelations.payoutLabel,
+      payoutDetails: wrWithRelations.payoutDetails
+    };
+
+    if (wrWithRelations.user?.email) {
       void sendWithdrawalRequestReceivedEmail({
-        to: wr.user.email,
-        fullName: wr.user.fullName,
-        campaignTitle: wr.campaign.title,
-        requestedAmount: wr.amount,
-        netAmount: wr.netAmount,
-        processingFeeAmount: wr.processingFeeAmount
+        to: wrWithRelations.user.email,
+        fullName: wrWithRelations.user.fullName,
+        campaignTitle: wrWithRelations.campaign.title,
+        campaignSlug: wrWithRelations.campaign.slug,
+        requestedAmount: wrWithRelations.amount,
+        netAmount: wrWithRelations.netAmount,
+        processingFeeAmount: wrWithRelations.processingFeeAmount,
+        currency: wrWithRelations.currency,
+        organizerNote: wrWithRelations.note,
+        ...payoutEmailFields
       });
     }
 
+    void notifyAdminsWithdrawalRequested({
+      campaignTitle: wrWithRelations.campaign.title,
+      campaignSlug: wrWithRelations.campaign.slug,
+      organizerName: wrWithRelations.user.fullName,
+      organizerEmail: wrWithRelations.user.email,
+      organizerPhone: wrWithRelations.user.phoneNumber ?? null,
+      requestedAmount: wrWithRelations.amount,
+      netAmount: wrWithRelations.netAmount,
+      processingFeeAmount: wrWithRelations.processingFeeAmount,
+      currency: wrWithRelations.currency,
+      organizerNote: wrWithRelations.note,
+      withdrawalRequestId: wrWithRelations.id,
+      ...payoutEmailFields
+    });
+
     await recordActivity({
       type: 'WITHDRAWAL_REQUESTED',
-      title: `Withdrawal requested: D${wr.amount.toLocaleString()} (net D${wr.netAmount.toLocaleString()}) — ${wr.campaign.title}`,
+      title: `Withdrawal requested: D${wrWithRelations.amount.toLocaleString()} (net D${wrWithRelations.netAmount.toLocaleString()}) — ${wrWithRelations.campaign.title}`,
       detail: `Campaign slug: ${body.campaignSlug}`,
-      campaignId: wr.campaignId,
+      campaignId: wrWithRelations.campaignId,
       userId,
       actorId: userId
     });
 
     res.status(201).json({
-      id: wr.id,
-      campaignId: wr.campaignId,
-      campaignTitle: wr.campaign.title,
-      campaignSlug: wr.campaign.slug,
-      amount: wr.amount,
-      processingFeeAmount: wr.processingFeeAmount,
-      netAmount: wr.netAmount,
-      currency: wr.currency,
-      status: wr.status,
-      note: wr.note,
-      createdAt: wr.createdAt.toISOString(),
-      updatedAt: wr.updatedAt.toISOString()
+      id: wrWithRelations.id,
+      campaignId: wrWithRelations.campaignId,
+      campaignTitle: wrWithRelations.campaign.title,
+      campaignSlug: wrWithRelations.campaign.slug,
+      amount: wrWithRelations.amount,
+      processingFeeAmount: wrWithRelations.processingFeeAmount,
+      netAmount: wrWithRelations.netAmount,
+      currency: wrWithRelations.currency,
+      status: wrWithRelations.status,
+      note: wrWithRelations.note,
+      createdAt: wrWithRelations.createdAt.toISOString(),
+      updatedAt: wrWithRelations.updatedAt.toISOString(),
+      ...serializeWithdrawalPayout(wrWithRelations)
     });
   })
 );
@@ -441,7 +508,157 @@ campaignsRouter.get(
       return;
     }
 
-    res.json(serializeCampaign(campaign));
+    res.json(
+      await serializeCampaignWithLifecycle(campaign)
+    );
+  })
+);
+
+campaignsRouter.post(
+  '/:slug/confirm-end',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ message: 'Authentication required' });
+      return;
+    }
+
+    const campaign = await prisma.campaign.findUnique({
+      where: { slug: String(req.params.slug) },
+      include: { donations: { take: 1 } }
+    });
+
+    if (!campaign) {
+      res.status(404).json({ message: 'Campaign not found' });
+      return;
+    }
+
+    if (campaign.creatorId !== userId) {
+      res.status(403).json({ message: 'Only the campaign organizer can confirm end of campaign' });
+      return;
+    }
+
+    if (!canOwnerConfirmEnd(campaign)) {
+      res.status(400).json({
+        message:
+          campaign.ownerConfirmedEndAt != null
+            ? 'You have already confirmed end of campaign.'
+            : 'This campaign cannot be confirmed ended in its current state.'
+      });
+      return;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.campaign.update({
+        where: { id: campaign.id },
+        data: { ownerConfirmedEndAt: new Date() }
+      });
+      await tryFinalizeCampaignEnded(tx, campaign.id);
+      return tx.campaign.findUnique({
+        where: { id: campaign.id },
+        include: { donations: { orderBy: { createdAt: 'desc' }, take: 10 } }
+      });
+    });
+
+    if (!updated) {
+      res.status(500).json({ message: 'Failed to update campaign' });
+      return;
+    }
+
+    await recordActivity({
+      type: 'CAMPAIGN_OWNER_CONFIRMED_END',
+      title: `Organizer confirmed end: ${updated.title}`,
+      detail: `Slug: ${updated.slug}`,
+      campaignId: updated.id,
+      userId: updated.creatorId,
+      actorId: userId
+    });
+
+    res.json(await serializeCampaignWithLifecycle(updated));
+  })
+);
+
+campaignsRouter.post(
+  '/:slug/extension-requests',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ message: 'Authentication required' });
+      return;
+    }
+
+    const body = extensionRequestSchema.parse(req.body);
+    const campaign = await prisma.campaign.findUnique({
+      where: { slug: String(req.params.slug) }
+    });
+
+    if (!campaign) {
+      res.status(404).json({ message: 'Campaign not found' });
+      return;
+    }
+
+    if (campaign.creatorId !== userId) {
+      res.status(403).json({ message: 'Only the campaign organizer can request an extension' });
+      return;
+    }
+
+    if (campaign.status !== 'Active') {
+      res.status(400).json({ message: 'Only active campaigns can request a period extension' });
+      return;
+    }
+
+    const existingPending = await prisma.campaignExtensionRequest.findFirst({
+      where: { campaignId: campaign.id, status: 'Pending' }
+    });
+    if (existingPending) {
+      res.status(400).json({
+        message: 'You already have a pending extension request for this campaign.'
+      });
+      return;
+    }
+
+    const endResult = validateNewCampaignEndDate(body.campaignEndDate);
+    if (!endResult.ok) {
+      res.status(400).json({ message: endResult.message });
+      return;
+    }
+
+    if (endResult.endsAt.getTime() <= campaign.endsAt.getTime()) {
+      res.status(400).json({
+        message: 'The new end date must be after your current campaign end date.'
+      });
+      return;
+    }
+
+    const request = await prisma.campaignExtensionRequest.create({
+      data: {
+        campaignId: campaign.id,
+        requestedById: userId,
+        requestedEndDate: body.campaignEndDate,
+        requestedEndsAt: endResult.endsAt,
+        reason: body.reason?.trim() || null
+      }
+    });
+
+    await recordActivity({
+      type: 'CAMPAIGN_EXTENSION_REQUESTED',
+      title: `Extension requested: ${campaign.title}`,
+      detail: `New end date: ${body.campaignEndDate}`,
+      campaignId: campaign.id,
+      userId: campaign.creatorId,
+      actorId: userId
+    });
+
+    res.status(201).json({
+      id: request.id,
+      campaignId: request.campaignId,
+      requestedEndDate: request.requestedEndDate,
+      status: request.status,
+      reason: request.reason,
+      createdAt: request.createdAt.toISOString()
+    });
   })
 );
 
@@ -557,18 +774,14 @@ campaignsRouter.post(
       return;
     }
 
-    if (campaign.status !== 'Active') {
-      res.status(400).json({
-        message: 'This campaign is not accepting donations. Only active campaigns can receive donations.'
-      });
-      return;
-    }
-
-    if (!isCampaignDonationWindowOpen(campaign.endsAt)) {
-      res.status(400).json({
-        message: 'This campaign has ended and is no longer accepting donations.'
-      });
-      return;
+    try {
+      await assertCampaignAcceptsDonations(campaign);
+    } catch (err) {
+      if (err instanceof HttpError) {
+        res.status(err.status).json({ message: err.message });
+        return;
+      }
+      throw err;
     }
 
     let donorDisplayName: string;
@@ -657,8 +870,14 @@ campaignsRouter.post(
       }
     });
 
+    if (updatedCampaign?.ownerConfirmedEndAt) {
+      await prisma.$transaction(async (tx) => {
+        await tryFinalizeCampaignEnded(tx, campaign.id);
+      });
+    }
+
     res.status(201).json(
-      updatedCampaign ? serializeCampaign(updatedCampaign) : null
+      updatedCampaign ? await serializeCampaignWithLifecycle(updatedCampaign) : null
     );
   })
 );
