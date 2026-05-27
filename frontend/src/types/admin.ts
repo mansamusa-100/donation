@@ -50,6 +50,9 @@ export interface AdminCampaign {
   termsAcceptedAt?: string | null;
   isTrending: boolean;
   status: AdminCampaignStatus;
+  availableForWithdrawal?: number;
+  donationPlatformFeeTotal?: number;
+  netRaisedAmount?: number;
   lastDonationAt?: string | null;
   inactive60Days?: boolean;
   creatorId: string | null;
@@ -133,6 +136,18 @@ export interface AdminPaged<T> {
   total: number;
   page: number;
   pageSize: number;
+}
+
+export interface AdminNotificationItem {
+  id: 'campaign_reviews' | 'extension_requests' | 'withdrawals' | 'bank_transfers';
+  label: string;
+  count: number;
+  tab: AdminPanelKey;
+}
+
+export interface AdminNotificationSummary {
+  total: number;
+  items: AdminNotificationItem[];
 }
 
 export interface AdminAccountRow {

@@ -28,6 +28,7 @@ import { assertCampaignAcceptsDonations } from '../lib/assertCampaignAcceptsDona
 import {
   canOwnerConfirmEnd,
   canRequestWithdrawal,
+  getCampaignWithdrawalBalances,
   isFundraisingPeriodEnded,
   tryFinalizeCampaignEnded
 } from '../lib/campaignLifecycle.js';
@@ -359,16 +360,12 @@ campaignsRouter.post(
           );
         }
 
-        const agg = await tx.withdrawalRequest.aggregate({
-          where: {
-            campaignId: campaign.id,
-            status: { in: ['Pending', 'Approved', 'Paid'] }
-          },
-          _sum: { amount: true }
-        });
-
-        const committed = agg._sum.amount ?? 0;
-        const available = Math.max(0, campaign.raisedAmount - committed);
+        const balances = await getCampaignWithdrawalBalances(
+          tx,
+          campaign.id,
+          campaign.raisedAmount
+        );
+        const available = balances.availableForWithdrawal;
 
         if (body.amount > available) {
           throw new HttpError(

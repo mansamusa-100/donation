@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import {
   BanknoteIcon,
+  BellIcon,
   ClipboardListIcon,
   ExternalLinkIcon,
   HistoryIcon,
@@ -29,6 +30,7 @@ import {
   type AdminCampaignStatus,
   type AdminExtensionRequestRow,
   type AdminDashboardStats,
+  type AdminNotificationSummary,
   type AdminPanelKey,
   type AdminUserRow,
   type AdminWithdrawalRequestRow,
@@ -319,6 +321,10 @@ export function AdminPage() {
   const [withdrawalsTotal, setWithdrawalsTotal] = useState(0);
   const [usersPage, setUsersPage] = useState(1);
   const [usersTotal, setUsersTotal] = useState(0);
+  const [notificationSummary, setNotificationSummary] = useState<AdminNotificationSummary | null>(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState('');
 
   const canAccess = useCallback(
     (key: AdminPanelKey) => canAccessPanel(user?.role, user?.adminPanelPermissions, key),
@@ -430,6 +436,23 @@ export function AdminPage() {
     usersPage
   ]);
 
+  const loadNotifications = useCallback(async () => {
+    if (user?.role !== 'ADMIN') {
+      setNotificationSummary(null);
+      return;
+    }
+    setNotificationsLoading(true);
+    setNotificationsError('');
+    try {
+      const summary = await api.getAdminNotificationSummary();
+      setNotificationSummary(summary);
+    } catch (err) {
+      setNotificationsError(err instanceof Error ? err.message : 'Failed to load notifications');
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, [user?.role]);
+
   const loadAudit = useCallback(async () => {
     if (user?.role !== 'ADMIN') {
       return;
@@ -464,12 +487,33 @@ export function AdminPage() {
   );
 
   const allowedTabIds = useMemo(() => new Set(navItems.map((n) => n.id)), [navItems]);
+
+  const visibleNotificationItems = useMemo(
+    () =>
+      (notificationSummary?.items ?? []).filter(
+        (item) => item.count > 0 && allowedTabIds.has(item.tab)
+      ),
+    [allowedTabIds, notificationSummary?.items]
+  );
+
+  const notificationCount = visibleNotificationItems.reduce((sum, item) => sum + item.count, 0);
   
   useEffect(() => {
     if (user?.role === 'ADMIN') {
       void loadData();
+      void loadNotifications();
     }
-  }, [loadData, user?.adminPanelPermissions, user?.role]);
+  }, [loadData, loadNotifications, user?.adminPanelPermissions, user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== 'ADMIN') {
+      return;
+    }
+    const id = window.setInterval(() => {
+      void loadNotifications();
+    }, 45_000);
+    return () => window.clearInterval(id);
+  }, [loadNotifications, user?.role]);
 
   useEffect(() => {
     if (navItems.length > 0 && !allowedTabIds.has(tab)) {
@@ -919,9 +963,76 @@ export function AdminPage() {
       <div className="flex min-w-0 flex-1 flex-col overflow-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:p-8">
         <div className="mx-auto w-full max-w-6xl">
           <header className="mb-5 md:mb-6">
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-display font-bold text-slate-900 leading-tight">
-              {navItems.find((n) => n.id === tab)?.label}
-            </h1>
+            <div className="flex items-start justify-between gap-4">
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-display font-bold text-slate-900 leading-tight">
+                {navItems.find((n) => n.id === tab)?.label}
+              </h1>
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setNotificationsOpen((v) => !v)}
+                  className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                  aria-label={
+                    notificationCount > 0
+                      ? `${notificationCount} admin notifications`
+                      : 'Admin notifications'
+                  }>
+                  <BellIcon className="h-5 w-5" />
+                  {notificationCount > 0 && (
+                    <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-red-600 px-1.5 py-0.5 text-center text-[10px] font-bold leading-none text-white">
+                      {notificationCount > 99 ? '99+' : notificationCount}
+                    </span>
+                  )}
+                </button>
+                {notificationsOpen && (
+                  <div className="absolute right-0 z-30 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">Admin notifications</p>
+                        <p className="text-xs text-slate-500">
+                          {notificationCount > 0
+                            ? `${notificationCount} item${notificationCount === 1 ? '' : 's'} need attention`
+                            : 'No actionable items'}
+                        </p>
+                      </div>
+                      {notificationsLoading && (
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                          Updating
+                        </span>
+                      )}
+                    </div>
+                    {notificationsError ? (
+                      <p className="px-4 py-3 text-sm text-red-700">{notificationsError}</p>
+                    ) : visibleNotificationItems.length === 0 ? (
+                      <p className="px-4 py-4 text-sm text-slate-500">
+                        You are all caught up for the admin areas you can access.
+                      </p>
+                    ) : (
+                      <div className="divide-y divide-slate-100">
+                        {visibleNotificationItems.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              setTab(item.tab);
+                              setNotificationsOpen(false);
+                            }}
+                            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50">
+                            <span>
+                              <span className="block text-sm font-semibold text-slate-900">{item.label}</span>
+                              <span className="text-xs text-slate-500">Open {item.tab}</span>
+                            </span>
+                            <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs font-bold text-brand-800">
+                              {item.count}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
             <p className="text-slate-600 text-sm mt-1.5 max-w-3xl">
               {tab === 'overview' &&
                 'Monitor submissions, approvals, and platform health. Organizers create campaigns; you review them here.'}

@@ -16,7 +16,7 @@ import {
 } from '../lib/auth.js';
 import { recordActivity } from '../lib/activityLog.js';
 import { notifyCreatorCampaignDecision, notifyCreatorWithdrawalStatus } from '../lib/mail.js';
-import { assertCanAssignPermissions } from '../config/adminPermissions.js';
+import { assertCanAssignPermissions, hasAdminPanelAccess } from '../config/adminPermissions.js';
 import {
   getEasypayPartnerApiCredentialsOk,
   provisionEasypayTenant
@@ -137,6 +137,93 @@ function parsePagination(
     skip: (page - 1) * pageSize
   };
 }
+
+adminRouter.get(
+  '/notifications/summary',
+  asyncHandler(async (req: AuthRequest, res) => {
+    const canAccess = (key: Parameters<typeof hasAdminPanelAccess>[2]) =>
+      hasAdminPanelAccess('ADMIN', req.adminPanelPermissions, key);
+
+    const items: Array<{
+      id: string;
+      label: string;
+      count: number;
+      tab: string;
+    }> = [];
+
+    const fetches: Promise<void>[] = [];
+
+    if (canAccess('queue')) {
+      fetches.push(
+        prisma.campaign
+          .count({ where: { status: 'PendingReview' } })
+          .then((count) => {
+            items.push({
+              id: 'campaign_reviews',
+              label: 'Campaign reviews',
+              count,
+              tab: 'queue'
+            });
+          })
+      );
+    }
+
+    if (canAccess('queue') || canAccess('campaigns')) {
+      fetches.push(
+        prisma.campaignExtensionRequest
+          .count({ where: { status: 'Pending' } })
+          .then((count) => {
+            items.push({
+              id: 'extension_requests',
+              label: 'Extension requests',
+              count,
+              tab: canAccess('queue') ? 'queue' : 'campaigns'
+            });
+          })
+      );
+    }
+
+    if (canAccess('withdrawals')) {
+      fetches.push(
+        prisma.withdrawalRequest
+          .count({ where: { status: 'Pending' } })
+          .then((count) => {
+            items.push({
+              id: 'withdrawals',
+              label: 'Withdrawal requests',
+              count,
+              tab: 'withdrawals'
+            });
+          })
+      );
+    }
+
+    if (canAccess('bank')) {
+      fetches.push(
+        (async () => {
+          await expireStaleBankTransferIntents();
+          const count = await prisma.bankTransferIntent.count({ where: { status: 'Pending' } });
+          items.push({
+            id: 'bank_transfers',
+            label: 'Bank transfers',
+            count,
+            tab: 'bank'
+          });
+        })()
+      );
+    }
+
+    await Promise.all(fetches);
+
+    const order = ['campaign_reviews', 'extension_requests', 'withdrawals', 'bank_transfers'];
+    items.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+
+    res.json({
+      total: items.reduce((sum, item) => sum + item.count, 0),
+      items
+    });
+  })
+);
 
 adminRouter.get(
   '/audit/export.csv',

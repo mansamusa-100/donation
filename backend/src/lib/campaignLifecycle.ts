@@ -6,6 +6,9 @@ const MS_PER_DAY = 86_400_000;
 export const CAMPAIGN_INACTIVITY_DAYS = 60;
 
 export type CampaignWithdrawalBalances = {
+  grossRaisedAmount: number;
+  donationPlatformFeeTotal: number;
+  netRaisedAmount: number;
   paidTotal: number;
   committedTotal: number;
   availableForWithdrawal: number;
@@ -15,6 +18,12 @@ export type CampaignWithdrawalBalances = {
 const COMMITTED_STATUSES: WithdrawalRequestStatus[] = ['Pending', 'Approved', 'Paid'];
 
 type WithdrawalBalanceDb = {
+  donation: {
+    aggregate: (args: {
+      where: Prisma.DonationWhereInput;
+      _sum: { platformFeeAmount: true };
+    }) => Promise<{ _sum: { platformFeeAmount: number | null } }>;
+  };
   withdrawalRequest: {
     aggregate: (args: {
       where: Prisma.WithdrawalRequestWhereInput;
@@ -26,9 +35,13 @@ type WithdrawalBalanceDb = {
 export async function getCampaignWithdrawalBalances(
   db: WithdrawalBalanceDb,
   campaignId: string,
-  raisedAmount: number
+  grossRaisedAmount: number
 ): Promise<CampaignWithdrawalBalances> {
-  const [paidAgg, committedAgg] = await Promise.all([
+  const [donationFeeAgg, paidAgg, committedAgg] = await Promise.all([
+    db.donation.aggregate({
+      where: { campaignId },
+      _sum: { platformFeeAmount: true }
+    }),
     db.withdrawalRequest.aggregate({
       where: { campaignId, status: 'Paid' },
       _sum: { amount: true }
@@ -39,12 +52,17 @@ export async function getCampaignWithdrawalBalances(
     })
   ]);
 
+  const donationPlatformFeeTotal = donationFeeAgg._sum.platformFeeAmount ?? 0;
+  const netRaisedAmount = Math.max(0, grossRaisedAmount - donationPlatformFeeTotal);
   const paidTotal = paidAgg._sum.amount ?? 0;
   const committedTotal = committedAgg._sum.amount ?? 0;
-  const availableForWithdrawal = Math.max(0, raisedAmount - committedTotal);
-  const allFundsPaidOut = paidTotal >= raisedAmount;
+  const availableForWithdrawal = Math.max(0, netRaisedAmount - committedTotal);
+  const allFundsPaidOut = paidTotal >= netRaisedAmount;
 
   return {
+    grossRaisedAmount,
+    donationPlatformFeeTotal,
+    netRaisedAmount,
     paidTotal,
     committedTotal,
     availableForWithdrawal,
@@ -166,6 +184,9 @@ export function buildCampaignLifecycleMeta(
     ownerConfirmedEndAt: campaign.ownerConfirmedEndAt?.toISOString() ?? null,
     endedAt: campaign.endedAt?.toISOString() ?? null,
     allFundsPaidOut: balances.allFundsPaidOut,
+    grossRaisedAmount: balances.grossRaisedAmount,
+    donationPlatformFeeTotal: balances.donationPlatformFeeTotal,
+    netRaisedAmount: balances.netRaisedAmount,
     paidWithdrawalTotal: balances.paidTotal,
     availableForWithdrawal: balances.availableForWithdrawal,
     canConfirmEnd: canOwnerConfirmEnd(campaign),

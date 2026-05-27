@@ -1,6 +1,6 @@
 /**
- * Platform fee on each donation (1.9%). Gross `amount` is what donors and campaigns see;
- * `platformFeeAmount` is stored for admin/reporting only.
+ * Platform fee on each donation (1.9%). Public campaign totals stay gross, but
+ * withdrawal availability deducts this fee from organizer-accessible funds.
  */
 export function donationPlatformFeeFromGross(grossAmount: number): number {
   if (grossAmount <= 0) {

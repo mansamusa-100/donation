@@ -13,6 +13,7 @@ import type {
   AdminCampaign,
   AdminDashboardStats,
   AdminExtensionRequestRow,
+  AdminNotificationSummary,
   AdminPaged,
   AdminUserRow,
   AdminWithdrawalRequestRow
@@ -490,6 +491,10 @@ export const api = {
 
   getAdminStats() {
     return request<AdminDashboardStats>('/api/admin/stats');
+  },
+
+  getAdminNotificationSummary() {
+    return request<AdminNotificationSummary>('/api/admin/notifications/summary');
   },
 
   getAdminActivity(params?: { page?: number; pageSize?: number }) {

@@ -531,6 +531,8 @@ function CampaignRow({
   const progress = Math.min(100, Math.round((campaign.raisedAmount / campaign.goalAmount) * 100));
   const status = campaign.status ?? 'Active';
   const available = campaign.availableForWithdrawal ?? 0;
+  const donationPlatformFeeTotal = campaign.donationPlatformFeeTotal ?? 0;
+  const netRaisedAmount = campaign.netRaisedAmount ?? Math.max(0, campaign.raisedAmount - donationPlatformFeeTotal);
   const canWithdraw = (status === 'Active' || status === 'Closed') && available > 0;
   const fundraisingPeriodEnded = campaign.fundraisingPeriodEnded === true;
   const acceptingDonations = campaign.acceptingDonations !== false;
@@ -579,8 +581,14 @@ function CampaignRow({
           </div>
           {available > 0 && (
             <p className="text-xs text-surface-600 mt-2">
-              Available for withdrawal:{' '}
+              Available for withdrawal after donation platform fees:{' '}
               <span className="font-bold text-surface-900">D{available.toLocaleString()}</span>
+            </p>
+          )}
+          {donationPlatformFeeTotal > 0 && (
+            <p className="text-xs text-surface-500 mt-1">
+              Gross raised D{campaign.raisedAmount.toLocaleString()} · Donation platform fees D
+              {donationPlatformFeeTotal.toLocaleString()} · Net campaign funds D{netRaisedAmount.toLocaleString()}
             </p>
           )}
           {fundraisingPeriodEnded && acceptingDonations && (

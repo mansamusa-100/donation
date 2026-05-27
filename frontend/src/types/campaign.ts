@@ -31,6 +31,9 @@ export interface CampaignLifecycleMeta {
   ownerConfirmedEndAt: string | null;
   endedAt: string | null;
   allFundsPaidOut: boolean;
+  grossRaisedAmount: number;
+  donationPlatformFeeTotal: number;
+  netRaisedAmount: number;
   paidWithdrawalTotal: number;
   availableForWithdrawal: number;
   canConfirmEnd: boolean;
@@ -100,6 +103,9 @@ export interface Campaign {
   recentDonors: Donor[];
   /** Present on creator dashboard / detail when lifecycle fields are included. */
   availableForWithdrawal?: number;
+  grossRaisedAmount?: number;
+  donationPlatformFeeTotal?: number;
+  netRaisedAmount?: number;
   fundraisingPeriodEnded?: boolean;
   acceptingDonations?: boolean;
   fullyEnded?: boolean;
