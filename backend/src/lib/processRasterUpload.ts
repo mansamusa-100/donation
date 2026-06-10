@@ -13,6 +13,10 @@ export const VERIFICATION_IMAGE_MAX_EDGE = 2048;
 const CAMPAIGN_WEBP_QUALITY = 82;
 const VERIFICATION_WEBP_QUALITY = 80;
 
+/** Profile pictures: small centered square is plenty for avatars. */
+const AVATAR_EDGE = 512;
+const AVATAR_WEBP_QUALITY = 84;
+
 function newWebpBasename() {
   return `${Date.now()}-${randomBytes(8).toString('hex')}.webp`;
 }
@@ -36,6 +40,28 @@ export async function writeCampaignCoverWebp(buffer: Buffer): Promise<{ relative
     .toFile(outPath);
 
   return { relativeUrl: `/uploads/campaign-covers/${filename}` };
+}
+
+/**
+ * Crop-and-resize a profile picture to a centered square WebP avatar.
+ */
+export async function writeProfileAvatarWebp(buffer: Buffer): Promise<{ relativeUrl: string }> {
+  const dir = path.join(uploadsRoot, 'avatars');
+  await fs.mkdir(dir, { recursive: true });
+  const filename = newWebpBasename();
+  const outPath = path.join(dir, filename);
+
+  await sharp(buffer, { failOn: 'none' })
+    .rotate()
+    .resize(AVATAR_EDGE, AVATAR_EDGE, {
+      fit: 'cover',
+      position: 'attention',
+      withoutEnlargement: false
+    })
+    .webp({ quality: AVATAR_WEBP_QUALITY, effort: 4 })
+    .toFile(outPath);
+
+  return { relativeUrl: `/uploads/avatars/${filename}` };
 }
 
 /**

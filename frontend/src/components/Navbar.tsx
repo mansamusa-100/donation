@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MenuIcon, XIcon, LogOutIcon, UserIcon } from 'lucide-react';
+import { MenuIcon, XIcon, LogOutIcon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { Avatar } from './Avatar';
 import { BRAND_LOGO_SRC, BRAND_NAME_PRIMARY } from '../lib/brand';
 
 export function Navbar() {
@@ -20,6 +21,10 @@ export function Navbar() {
     {
       name: 'How It Works',
       path: '/#how-it-works'
+    },
+    {
+      name: 'About Us',
+      path: '/about'
     }
   ];
 
@@ -66,9 +71,12 @@ export function Navbar() {
               {user ? (
                 <>
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-brand-100 rounded-full flex items-center justify-center text-brand-600">
-                      <UserIcon className="w-4 h-4" />
-                    </div>
+                    <Avatar
+                      name={user.fullName}
+                      src={user.avatarUrl}
+                      sizeClassName="w-8 h-8"
+                      textClassName="text-xs"
+                    />
                     <div>
                       <p className="text-xs text-surface-500">Logged in as</p>
                       <p className="text-sm font-semibold text-surface-900">{user.fullName}</p>

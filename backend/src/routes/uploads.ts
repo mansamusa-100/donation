@@ -7,7 +7,8 @@ import { asyncHandler } from '../lib/asyncHandler.js';
 import { authenticate, AuthRequest } from '../lib/auth.js';
 import {
   convertVerificationImageFileToWebp,
-  writeCampaignCoverWebp
+  writeCampaignCoverWebp,
+  writeProfileAvatarWebp
 } from '../lib/processRasterUpload.js';
 
 const uploadsRoot = path.join(process.cwd(), 'uploads');
@@ -72,6 +73,27 @@ uploadsRouter.post(
       res.json({ url: relativeUrl });
     } catch (err) {
       console.error('Campaign cover image processing failed:', err);
+      res.status(400).json({
+        message: 'Could not process that image. Try another JPEG, PNG, or WebP file.'
+      });
+    }
+  })
+);
+
+uploadsRouter.post(
+  '/profile-picture',
+  authenticate,
+  coverUpload.single('file'),
+  asyncHandler(async (req: AuthRequest, res) => {
+    if (!req.file?.buffer) {
+      res.status(400).json({ message: 'No file uploaded' });
+      return;
+    }
+    try {
+      const { relativeUrl } = await writeProfileAvatarWebp(req.file.buffer);
+      res.json({ url: relativeUrl });
+    } catch (err) {
+      console.error('Profile picture processing failed:', err);
       res.status(400).json({
         message: 'Could not process that image. Try another JPEG, PNG, or WebP file.'
       });

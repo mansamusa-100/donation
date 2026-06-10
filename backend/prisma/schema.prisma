@@ -67,6 +67,7 @@ model User {
   password        String
   fullName        String
   phoneNumber     String?
+  avatarUrl       String?
   role            UserRole  @default(USER)
   isActive        Boolean   @default(true)
   adminPanelPermissions String[] @default([])
@@ -93,7 +94,7 @@ model Campaign {
   slug             String         @unique
   title            String
   creatorName      String
-  creatorAvatar    String
+  creatorAvatar    String?
   creatorId        String?
   category         Category
   shortDescription String

@@ -36,6 +36,13 @@ const resetPasswordSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters')
 });
 
+const updateAvatarSchema = z.object({
+  avatarUrl: z
+    .string()
+    .regex(/^\/uploads\/avatars\/[\w.-]+$/, 'Invalid profile picture')
+    .nullable()
+});
+
 authRouter.post(
   '/register',
   asyncHandler(async (req, res) => {
@@ -216,6 +223,7 @@ authRouter.get(
         email: true,
         fullName: true,
         phoneNumber: true,
+        avatarUrl: true,
         role: true,
         isActive: true,
         createdAt: true,
@@ -233,11 +241,34 @@ authRouter.get(
       email: user.email,
       fullName: user.fullName,
       phoneNumber: user.phoneNumber,
+      avatarUrl: user.avatarUrl,
       role: user.role,
       isActive: user.isActive,
       createdAt: user.createdAt,
       adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
     });
+  })
+);
+
+authRouter.patch(
+  '/me/avatar',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const body = updateAvatarSchema.parse(req.body);
+
+    const user = await prisma.user.update({
+      where: { id: req.userId },
+      data: { avatarUrl: body.avatarUrl },
+      select: { id: true, avatarUrl: true }
+    });
+
+    // Keep organizer photos in sync on every campaign this user created.
+    await prisma.campaign.updateMany({
+      where: { creatorId: user.id },
+      data: { creatorAvatar: body.avatarUrl }
+    });
+
+    res.json({ avatarUrl: user.avatarUrl });
   })
 );
 

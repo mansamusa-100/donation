@@ -73,6 +73,11 @@ export function Footer() {
                   Pricing & Fees
                 </Link>
               </li>
+              <li>
+                <Link to="/about" className="hover:text-brand-400 transition-colors">
+                  About Us
+                </Link>
+              </li>
             </ul>
           </div>
 

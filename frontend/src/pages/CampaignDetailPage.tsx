@@ -6,6 +6,7 @@ import { CategoryBadge } from '../components/CategoryBadge';
 import { ShareButtons } from '../components/ShareButtons';
 import { DonorWall } from '../components/DonorWall';
 import { DonateModal } from '../components/DonateModal';
+import { Avatar } from '../components/Avatar';
 import { RouteLoader } from '../components/RouteLoader';
 import { DataLoadAlert } from '../components/DataLoadAlert';
 import type { Campaign } from '../types/campaign';
@@ -144,10 +145,11 @@ export function CampaignDetailPage() {
               </div>
             )}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-surface-200 flex items-center gap-4">
-              <img
+              <Avatar
+                name={campaign.creatorName}
                 src={campaign.creatorAvatar}
-                alt={campaign.creatorName}
-                className="w-14 h-14 rounded-full object-cover bg-surface-100"
+                sizeClassName="w-14 h-14"
+                textClassName="text-lg"
               />
               <div>
                 <p className="text-sm text-surface-500">Campaign Organizer</p>

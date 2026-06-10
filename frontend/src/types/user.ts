@@ -4,6 +4,7 @@ export interface User {
   fullName: string;
   role: 'ADMIN' | 'USER';
   phoneNumber?: string | null;
+  avatarUrl?: string | null;
   isActive?: boolean;
   createdAt?: string;
   adminPanelPermissions?: string[];

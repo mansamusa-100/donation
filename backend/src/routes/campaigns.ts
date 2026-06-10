@@ -683,14 +683,22 @@ campaignsRouter.post(
     const slug = await ensureUniqueSlug(body.title);
     const galleryImages = (body.galleryImages ?? []).filter((u) => u !== body.coverImage).slice(0, 4);
 
+    // Use the organizer's own profile picture; no demo/placeholder fallback.
+    let organizerAvatar: string | null = body.creatorAvatar ?? null;
+    if (!organizerAvatar && req.userId) {
+      const owner = await prisma.user.findUnique({
+        where: { id: req.userId },
+        select: { avatarUrl: true }
+      });
+      organizerAvatar = owner?.avatarUrl ?? null;
+    }
+
     const campaign = await prisma.campaign.create({
       data: {
         slug,
         title: body.title,
         creatorName: body.creatorName,
-        creatorAvatar:
-          body.creatorAvatar ??
-          'https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=150&h=150&fit=crop&q=80',
+        creatorAvatar: organizerAvatar,
         category: body.category,
         shortDescription: body.shortDescription,
         fullDescription: body.fullDescription,

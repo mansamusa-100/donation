@@ -63,6 +63,10 @@ const PricingFeesPage = lazy(async () => ({
   default: (await import('./pages/PricingFeesPage')).PricingFeesPage
 }));
 
+const AboutPage = lazy(async () => ({
+  default: (await import('./pages/AboutPage')).AboutPage
+}));
+
 const HelpCenterPage = lazy(async () => ({
   default: (await import('./pages/HelpCenterPage')).HelpCenterPage
 }));
@@ -132,6 +136,7 @@ function AppChrome() {
             <Route path="/payment/bank/pending" element={<PaymentBankPendingPage />} />
             <Route path="/payment/easypay/return" element={<PaymentEasypayReturnPage />} />
             <Route path="/pricing" element={<PricingFeesPage />} />
+            <Route path="/about" element={<AboutPage />} />
             <Route path="/help" element={<HelpCenterPage />} />
             <Route path="/trust" element={<TrustSafetyPage />} />
             <Route path="/contact" element={<ContactPage />} />

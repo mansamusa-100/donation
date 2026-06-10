@@ -17,6 +17,7 @@ import { api } from '../lib/api';
 import { mediaUrl } from '../lib/mediaUrl';
 import { DataLoadAlert } from '../components/DataLoadAlert';
 import { PayoutMethodsPanel } from '../components/PayoutMethodsPanel';
+import { ProfileAvatarEditor } from '../components/ProfileAvatarEditor';
 import type { UserPayoutMethod } from '../types/payout';
 import type {
   Campaign,
@@ -230,6 +231,12 @@ export function DashboardPage() {
             </Link>
           )}
         </div>
+
+        {user.role !== 'ADMIN' && (
+          <div className="mb-8 bg-white p-5 rounded-2xl shadow-sm border border-surface-200">
+            <ProfileAvatarEditor />
+          </div>
+        )}
 
         {loadState === 'error' && (
           <div className="mb-6">

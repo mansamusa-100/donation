@@ -34,7 +34,7 @@ export interface AdminCampaign {
   slug: string;
   title: string;
   creatorName: string;
-  creatorAvatar: string;
+  creatorAvatar?: string | null;
   category: string;
   shortDescription: string;
   fullDescription: string;

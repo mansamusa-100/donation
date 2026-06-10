@@ -290,6 +290,27 @@ export const api = {
     });
   },
 
+  uploadProfilePicture(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const headers = new Headers();
+    if (authToken) {
+      headers.set('Authorization', `Bearer ${authToken}`);
+    }
+    return request<{ url: string }>('/api/uploads/profile-picture', {
+      method: 'POST',
+      body: formData,
+      headers
+    });
+  },
+
+  updateMyAvatar(avatarUrl: string | null) {
+    return request<{ avatarUrl: string | null }>('/api/auth/me/avatar', {
+      method: 'PATCH',
+      body: JSON.stringify({ avatarUrl })
+    });
+  },
+
   uploadVerificationId(file: File) {
     const formData = new FormData();
     formData.append('file', file);
