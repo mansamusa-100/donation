@@ -10,6 +10,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<User>;
+  loginWithGoogle: (credential: string) => Promise<User>;
   register: (email: string, password: string, fullName: string, phoneNumber?: string) => Promise<User>;
   refreshUser: () => Promise<void>;
   logout: () => void;
@@ -128,6 +129,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginWithGoogle = async (credential: string): Promise<User> => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL || ''}/api/auth/google`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential })
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.message || 'Google sign-in failed');
+      }
+
+      const data = await response.json();
+      setToken(data.token);
+      localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
+      setAuthToken(data.token);
+      const me = await getCurrentUser();
+      setUser(me);
+      return me;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const register = async (
     email: string,
     password: string,
@@ -179,6 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         isAuthenticated: !!user && !!token,
         login,
+        loginWithGoogle,
         register,
         refreshUser,
         logout

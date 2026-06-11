@@ -1,8 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
+import { OAuth2Client } from 'google-auth-library';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { prisma } from '../lib/prisma.js';
+import { writeProfileAvatarWebp } from '../lib/processRasterUpload.js';
 import {
   generateToken,
   hashPassword,
@@ -35,6 +37,34 @@ const resetPasswordSchema = z.object({
   token: z.string().min(10, 'Invalid reset link'),
   password: z.string().min(6, 'Password must be at least 6 characters')
 });
+
+const googleAuthSchema = z.object({
+  credential: z.string().min(10, 'Missing Google credential')
+});
+
+const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID || undefined);
+
+/**
+ * Download the Google profile photo and store it through our own avatar
+ * pipeline so we never hotlink Google URLs. Failures are non-fatal.
+ */
+async function importGoogleProfilePicture(pictureUrl: string | undefined): Promise<string | null> {
+  if (!pictureUrl) {
+    return null;
+  }
+  try {
+    const response = await fetch(pictureUrl);
+    if (!response.ok) {
+      return null;
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const { relativeUrl } = await writeProfileAvatarWebp(buffer);
+    return relativeUrl;
+  } catch (err) {
+    console.error('Google profile picture import failed:', err);
+    return null;
+  }
+}
 
 const updateAvatarSchema = z.object({
   avatarUrl: z
@@ -190,6 +220,14 @@ authRouter.post(
       return;
     }
 
+    if (!user.password) {
+      res.status(401).json({
+        message:
+          'This account uses Google sign-in. Continue with Google, or use “Forgot password” to set a password.'
+      });
+      return;
+    }
+
     const passwordMatch = await comparePassword(body.password, user.password);
 
     if (!passwordMatch) {
@@ -208,6 +246,90 @@ authRouter.post(
         adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
       },
       token
+    });
+  })
+);
+
+authRouter.post(
+  '/google',
+  asyncHandler(async (req, res) => {
+    if (!env.GOOGLE_CLIENT_ID) {
+      res.status(503).json({ message: 'Google sign-in is not available right now.' });
+      return;
+    }
+
+    const body = googleAuthSchema.parse(req.body);
+
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken: body.credential,
+        audience: env.GOOGLE_CLIENT_ID
+      });
+      payload = ticket.getPayload();
+    } catch (err) {
+      console.error('Google ID token verification failed:', err);
+      res.status(401).json({ message: 'Google sign-in failed. Please try again.' });
+      return;
+    }
+
+    if (!payload?.sub || !payload.email || payload.email_verified !== true) {
+      res.status(401).json({ message: 'We could not verify your Google account email.' });
+      return;
+    }
+
+    const email = payload.email.toLowerCase();
+
+    let user = await prisma.user.findUnique({ where: { googleId: payload.sub } });
+    let isNewUser = false;
+
+    if (!user) {
+      // Auto-link: Google verified ownership of this email, so it is safe to
+      // attach the Google identity to an existing email/password account.
+      const existing = await prisma.user.findFirst({
+        where: { email: { equals: email, mode: 'insensitive' } }
+      });
+
+      if (existing) {
+        user = await prisma.user.update({
+          where: { id: existing.id },
+          data: { googleId: payload.sub }
+        });
+      } else {
+        isNewUser = true;
+        const avatarUrl = await importGoogleProfilePicture(payload.picture);
+        user = await prisma.user.create({
+          data: {
+            email,
+            fullName: payload.name?.trim() || email.split('@')[0],
+            googleId: payload.sub,
+            avatarUrl
+          }
+        });
+      }
+    }
+
+    if (!user.isActive) {
+      res.status(401).json({ message: 'Account is inactive' });
+      return;
+    }
+
+    if (isNewUser) {
+      void sendWelcomeEmail({ to: user.email, fullName: user.fullName });
+    }
+
+    const token = generateToken(user.id);
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
+      },
+      token,
+      isNewUser
     });
   })
 );

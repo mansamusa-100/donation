@@ -46,7 +46,9 @@ const envSchema = z.object({
   INTERNAL_PARTNER_AUTH_MODE: z.enum(['bearer', 'raw']).default('bearer'),
   INTERNAL_PARTNER_WEBHOOK_SECRET: z.string().default(''),
   /** Business created in Easypay dashboard (single platform merchant) */
-  EASYPAY_PARTNER_BUSINESS_ID: z.string().default('')
+  EASYPAY_PARTNER_BUSINESS_ID: z.string().default(''),
+  /** OAuth client ID from Google Auth Platform — enables "Continue with Google". */
+  GOOGLE_CLIENT_ID: z.string().default('')
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

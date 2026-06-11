@@ -64,7 +64,10 @@ enum BankTransferStatus {
 model User {
   id              String    @id @default(cuid())
   email           String    @unique
-  password        String
+  /// Null for accounts created via Google sign-in (they can set one via password reset).
+  password        String?
+  /// Google account `sub` claim when the user signed in/up with Google.
+  googleId        String?   @unique
   fullName        String
   phoneNumber     String?
   avatarUrl       String?

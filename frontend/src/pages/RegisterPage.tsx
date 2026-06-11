@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, User, Phone, AlertCircle } from 'lucide-react';
+import { GoogleSignInButton } from '../components/GoogleSignInButton';
 
 export function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -13,9 +14,23 @@ export function RegisterPage() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { register } = useAuth();
+  const { register, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const handleGoogleCredential = async (credential: string) => {
+    setError('');
+    setLoading(true);
+    try {
+      const loggedIn = await loginWithGoogle(credential);
+      const from = (location.state as { from?: { pathname: string } })?.from?.pathname;
+      navigate(from ?? (loggedIn.role === 'ADMIN' ? '/admin' : '/dashboard'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Google sign-in failed');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -153,6 +168,18 @@ export function RegisterPage() {
             {loading ? 'Registering...' : 'Register'}
           </button>
         </form>
+
+        <div className="my-6 flex items-center gap-3">
+          <div className="h-px flex-1 bg-gray-200" />
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">or</span>
+          <div className="h-px flex-1 bg-gray-200" />
+        </div>
+
+        <GoogleSignInButton
+          text="signup_with"
+          onCredential={(credential) => void handleGoogleCredential(credential)}
+          onError={setError}
+        />
 
         <p className="mt-6 text-center text-gray-600">
           Already have an account?{' '}

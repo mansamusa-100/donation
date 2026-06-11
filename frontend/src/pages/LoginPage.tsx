@@ -2,15 +2,21 @@ import { useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, AlertCircle } from 'lucide-react';
+import { GoogleSignInButton } from '../components/GoogleSignInButton';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const goAfterAuth = (role: string) => {
+    const from = (location.state as { from?: { pathname: string } })?.from?.pathname;
+    navigate(from ?? (role === 'ADMIN' ? '/admin' : '/dashboard'));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,10 +25,22 @@ export function LoginPage() {
 
     try {
       const loggedIn = await login(email, password);
-      const from = (location.state as { from?: { pathname: string } })?.from?.pathname;
-      navigate(from ?? (loggedIn.role === 'ADMIN' ? '/admin' : '/dashboard'));
+      goAfterAuth(loggedIn.role);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleCredential = async (credential: string) => {
+    setError('');
+    setLoading(true);
+    try {
+      const loggedIn = await loginWithGoogle(credential);
+      goAfterAuth(loggedIn.role);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Google sign-in failed');
     } finally {
       setLoading(false);
     }
@@ -86,6 +104,18 @@ export function LoginPage() {
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
+
+        <div className="my-6 flex items-center gap-3">
+          <div className="h-px flex-1 bg-gray-200" />
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">or</span>
+          <div className="h-px flex-1 bg-gray-200" />
+        </div>
+
+        <GoogleSignInButton
+          text="signin_with"
+          onCredential={(credential) => void handleGoogleCredential(credential)}
+          onError={setError}
+        />
 
         <p className="mt-6 text-center text-gray-600">
           Don&apos;t have an account?{' '}
