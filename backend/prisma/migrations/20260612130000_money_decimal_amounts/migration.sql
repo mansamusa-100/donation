@@ -1,0 +1,24 @@
+-- Money amounts accept decimals (e.g. D150.75). Existing integer values convert losslessly.
+ALTER TABLE "Campaign" ALTER COLUMN "raisedAmount" TYPE DOUBLE PRECISION;
+
+ALTER TABLE "WavePaymentIntent" ALTER COLUMN "amount" TYPE DOUBLE PRECISION;
+ALTER TABLE "WavePaymentIntent" ALTER COLUMN "platformTipAmount" TYPE DOUBLE PRECISION;
+
+ALTER TABLE "EasypayPaymentIntent" ALTER COLUMN "amount" TYPE DOUBLE PRECISION;
+ALTER TABLE "EasypayPaymentIntent" ALTER COLUMN "platformTipAmount" TYPE DOUBLE PRECISION;
+
+ALTER TABLE "BankTransferIntent" ALTER COLUMN "declaredAmount" TYPE DOUBLE PRECISION;
+ALTER TABLE "BankTransferIntent" ALTER COLUMN "confirmedAmount" TYPE DOUBLE PRECISION;
+ALTER TABLE "BankTransferIntent" ALTER COLUMN "platformTipAmount" TYPE DOUBLE PRECISION;
+
+ALTER TABLE "PlatformTip" ALTER COLUMN "amount" TYPE DOUBLE PRECISION;
+
+ALTER TABLE "WithdrawalRequest" ALTER COLUMN "amount" TYPE DOUBLE PRECISION;
+ALTER TABLE "WithdrawalRequest" ALTER COLUMN "processingFeeAmount" TYPE DOUBLE PRECISION;
+ALTER TABLE "WithdrawalRequest" ALTER COLUMN "netAmount" TYPE DOUBLE PRECISION;
+
+ALTER TABLE "Donation" ALTER COLUMN "amount" TYPE DOUBLE PRECISION;
+ALTER TABLE "Donation" ALTER COLUMN "platformFeeAmount" TYPE DOUBLE PRECISION;
+
+ALTER TABLE "PlatformStat" ALTER COLUMN "totalRaised" TYPE DOUBLE PRECISION;
+ALTER TABLE "PlatformStat" ALTER COLUMN "totalPlatformTips" TYPE DOUBLE PRECISION;

@@ -103,7 +103,7 @@ model Campaign {
   shortDescription String
   fullDescription  String
   goalAmount       Int
-  raisedAmount     Int            @default(0)
+  raisedAmount     Float          @default(0)
   donorCount       Int            @default(0)
   daysLeft         Int
   /// Inclusive campaign deadline (end of the chosen UTC calendar day).
@@ -136,8 +136,8 @@ model WavePaymentIntent {
   clientReference     String    @unique
   campaignId          String
   userId              String?
-  amount              Int
-  platformTipAmount   Int       @default(0)
+  amount              Float
+  platformTipAmount   Float     @default(0)
   currency            Currency  @default(GMD)
   donorName           String
   message             String?
@@ -163,8 +163,8 @@ model EasypayPaymentIntent {
   orderPublicCode          String?
   campaignId               String
   userId                   String?
-  amount                   Int
-  platformTipAmount        Int       @default(0)
+  amount                   Float
+  platformTipAmount        Float     @default(0)
   currency                 Currency  @default(GMD)
   donorName                String
   message                  String?
@@ -213,9 +213,9 @@ model BankTransferIntent {
   campaignId            String
   userId                String?
   platformBankAccountId String
-  declaredAmount        Int
-  confirmedAmount       Int?
-  platformTipAmount     Int                @default(0)
+  declaredAmount        Float
+  confirmedAmount       Float?
+  platformTipAmount     Float              @default(0)
   currency              Currency           @default(GMD)
   donorName             String
   message               String?
@@ -247,7 +247,7 @@ model PlatformTip {
   bankTransferIntentId String?   @unique
   userId               String?
   donorName            String
-  amount               Int
+  amount               Float
   currency             Currency  @default(GMD)
   campaignId           String?
   createdAt            DateTime    @default(now())
@@ -301,9 +301,9 @@ model WithdrawalRequest {
   id         String                  @id @default(cuid())
   campaignId String
   userId     String
-  amount     Int
-  processingFeeAmount Int @default(0)
-  netAmount  Int                     @default(0)
+  amount     Float
+  processingFeeAmount Float @default(0)
+  netAmount  Float                   @default(0)
   currency   Currency                @default(GMD)
   status     WithdrawalRequestStatus @default(Pending)
   note       String?
@@ -331,8 +331,8 @@ model Donation {
   campaignId  String
   userId      String?
   donorName   String
-  amount      Int
-  platformFeeAmount Int @default(0)
+  amount      Float
+  platformFeeAmount Float @default(0)
   currency    Currency @default(GMD)
   message     String?
   isAnonymous Boolean  @default(false)
@@ -349,11 +349,11 @@ model Donation {
 
 model PlatformStat {
   id               String   @id @default("platform")
-  totalRaised      Int
+  totalRaised      Float
   campaignsFunded  Int
   totalDonors      Int
   communitiesHelped Int
-  totalPlatformTips Int     @default(0)
+  totalPlatformTips Float   @default(0)
   updatedAt        DateTime @updatedAt
 }
 

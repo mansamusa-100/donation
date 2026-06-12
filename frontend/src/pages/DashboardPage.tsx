@@ -554,7 +554,7 @@ function CampaignRow({
 
   const handleWithdrawSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const n = Math.round(Number(wAmount));
+    const n = Math.round(Number(wAmount) * 100) / 100;
     if (!Number.isFinite(n) || n < 1) {
       return;
     }
@@ -740,7 +740,8 @@ function CampaignRow({
                 type="number"
                 min={1}
                 max={available}
-                step={1}
+                step="0.01"
+                inputMode="decimal"
                 value={wAmount}
                 onChange={(e) => setWAmount(e.target.value)}
                 placeholder={`Max D${available.toLocaleString()}`}

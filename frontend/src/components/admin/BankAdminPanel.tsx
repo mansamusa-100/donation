@@ -81,7 +81,7 @@ export function BankAdminPanel() {
     if (!confirmIntent) {
       return;
     }
-    const amt = Number.parseInt(receivedAmount, 10);
+    const amt = Math.round(Number.parseFloat(receivedAmount) * 100) / 100;
     if (!Number.isFinite(amt) || amt < 1) {
       setActionError('Enter the amount you received (at least D1).');
       return;
@@ -409,6 +409,8 @@ export function BankAdminPanel() {
               <input
                 type="number"
                 min={1}
+                step="0.01"
+                inputMode="decimal"
                 className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
                 value={receivedAmount}
                 onChange={(e) => setReceivedAmount(e.target.value)}

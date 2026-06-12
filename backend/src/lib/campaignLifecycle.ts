@@ -1,5 +1,6 @@
 import type { Campaign, CampaignStatus, Prisma, WithdrawalRequestStatus } from '@prisma/client';
 import { isCampaignDonationWindowOpen } from './campaignEndsAt.js';
+import { roundMoney } from './money.js';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -52,12 +53,13 @@ export async function getCampaignWithdrawalBalances(
     })
   ]);
 
-  const donationPlatformFeeTotal = donationFeeAgg._sum.platformFeeAmount ?? 0;
-  const netRaisedAmount = Math.max(0, grossRaisedAmount - donationPlatformFeeTotal);
-  const paidTotal = paidAgg._sum.amount ?? 0;
-  const committedTotal = committedAgg._sum.amount ?? 0;
-  const availableForWithdrawal = Math.max(0, netRaisedAmount - committedTotal);
-  const allFundsPaidOut = paidTotal >= netRaisedAmount;
+  const donationPlatformFeeTotal = roundMoney(donationFeeAgg._sum.platformFeeAmount ?? 0);
+  const netRaisedAmount = Math.max(0, roundMoney(grossRaisedAmount - donationPlatformFeeTotal));
+  const paidTotal = roundMoney(paidAgg._sum.amount ?? 0);
+  const committedTotal = roundMoney(committedAgg._sum.amount ?? 0);
+  const availableForWithdrawal = Math.max(0, roundMoney(netRaisedAmount - committedTotal));
+  // Half-butut tolerance so float noise never blocks the "fully paid out" state.
+  const allFundsPaidOut = paidTotal >= netRaisedAmount - 0.005;
 
   return {
     grossRaisedAmount,

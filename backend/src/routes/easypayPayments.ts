@@ -21,6 +21,7 @@ import {
 } from '../lib/easypayPartner.js';
 import { finalizeEasypayIntentPaid, loadEasypayIntentForStatus } from '../lib/finalizeEasypayIntent.js';
 import { extractEasypayPaymentMetadata, easypayPartnerPayloadIndicatesPaymentIncomplete } from '../lib/easypayPartnerPayload.js';
+import { roundMoney } from '../lib/money.js';
 
 export const easypayPaymentsRouter = Router();
 
@@ -109,7 +110,7 @@ easypayPaymentsRouter.post(
     }
 
     const platformTip = body.platformTipAmount ?? 0;
-    const totalGmd = body.amount + platformTip;
+    const totalGmd = roundMoney(body.amount + platformTip);
     if (totalGmd > 2_000_000_000) {
       res.status(400).json({ message: 'Combined campaign donation and platform tip is too large.' });
       return;

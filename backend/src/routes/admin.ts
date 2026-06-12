@@ -37,6 +37,7 @@ import {
 } from '../lib/finalizeBankTransfer.js';
 import { sendBankTransferRejectedEmail } from '../lib/mail.js';
 import { HttpError } from '../lib/HttpError.js';
+import { boundedMoneySchema } from '../lib/money.js';
 
 const adminRouter = Router();
 
@@ -1365,7 +1366,7 @@ adminRouter.get(
 );
 
 const confirmBankTransferSchema = z.object({
-  receivedAmount: z.number().int().min(1),
+  receivedAmount: boundedMoneySchema(1, 2_000_000_000),
   adminNote: z.string().max(2000).optional().nullable()
 });
 

@@ -125,9 +125,14 @@ export function DonateModal({
 
   if (!isOpen) return null;
 
+  /** Donation amount rounded to 2 decimal places (bututs). */
+  const donationAmount = Math.round((Number(amount) || 0) * 100) / 100;
+  /** Total the donor is charged (donation + tip), rounded for clean display. */
+  const chargeTotal = Math.round((donationAmount + platformTipAmount) * 100) / 100;
+
   const validateParticipantDetails = (): boolean => {
-    if (!amount || amount <= 0) {
-      setError('Please enter a valid amount');
+    if (!donationAmount || donationAmount < 1) {
+      setError('Please enter a valid amount (at least D1)');
       return false;
     }
     if (platformTipAmount < 0 || platformTipAmount > MAX_PLATFORM_TIP) {
@@ -154,7 +159,7 @@ export function DonateModal({
 
   const donatePayloadBase = () => ({
     campaignSlug: campaignSlug!,
-    amount: Number(amount),
+    amount: donationAmount,
     ...(platformTipAmount > 0 ? { platformTipAmount } : {}),
     currency: 'GMD' as const,
     ...(isAnonymous ? {} : donorName.trim() ? { donorName: donorName.trim() } : {}),
@@ -360,7 +365,7 @@ export function DonateModal({
     try {
       await api.createDonation(campaignSlug!, {
         ...(isAnonymous ? { donorName: 'Anonymous' } : donorName.trim() ? { donorName: donorName.trim() } : {}),
-        amount: Number(amount),
+        amount: donationAmount,
         ...(platformTipAmount > 0 ? { platformTipAmount } : {}),
         currency: 'GMD',
         message: message || undefined,
@@ -479,6 +484,9 @@ export function DonateModal({
                     <input
                     type="number"
                     placeholder="Custom Amount"
+                    min={1}
+                    step="0.01"
+                    inputMode="decimal"
                     value={amount}
                     onChange={(e) => setAmount(Number(e.target.value) || '')}
                     className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-surface-200 focus:border-brand-500 focus:ring-0 outline-none transition-colors font-bold text-surface-900" />
@@ -726,7 +734,7 @@ export function DonateModal({
                         ) : null}
                         <li>
                           Wave will charge:{' '}
-                          <strong>D{(Number(amount) || 0) + platformTipAmount}</strong>
+                          <strong>D{chargeTotal}</strong>
                         </li>
                       </ul>
                       <p className="text-xs text-surface-600">
@@ -748,7 +756,7 @@ export function DonateModal({
                       <p className="font-semibold text-surface-900">Pay with APS Money</p>
                       <p>
                         Total charge:{' '}
-                        <strong>D{(Number(amount) || 0) + platformTipAmount}</strong>
+                        <strong>D{chargeTotal}</strong>
                         {platformTipAmount > 0 ? (
                           <span className="text-surface-600">
                             {' '}
@@ -820,7 +828,7 @@ export function DonateModal({
                       <p className="font-semibold text-surface-900">Pay with Yonna</p>
                       <p>
                         Total charge:{' '}
-                        <strong>D{(Number(amount) || 0) + platformTipAmount}</strong>
+                        <strong>D{chargeTotal}</strong>
                         {platformTipAmount > 0 ? (
                           <span className="text-surface-600">
                             {' '}
@@ -896,7 +904,7 @@ export function DonateModal({
                               <span className="animate-pulse">Opening Wave…</span>
                             ) : (
                               <>
-                                Pay D{(Number(amount) || 0) + platformTipAmount} with Wave
+                                Pay D{chargeTotal} with Wave
                                 {platformTipAmount > 0 ? (
                                   <span className="text-sm font-normal opacity-90">
                                     {' '}
@@ -921,7 +929,7 @@ export function DonateModal({
                               <span className="animate-pulse">Opening Yonna…</span>
                             ) : (
                               <>
-                                Pay D{(Number(amount) || 0) + platformTipAmount} with Yonna
+                                Pay D{chargeTotal} with Yonna
                                 {platformTipAmount > 0 ? (
                                   <span className="text-sm font-normal opacity-90">
                                     {' '}
@@ -957,7 +965,7 @@ export function DonateModal({
                               <span className="animate-pulse">Starting…</span>
                             ) : (
                               <>
-                                Pay D{(Number(amount) || 0) + platformTipAmount} with APS
+                                Pay D{chargeTotal} with APS
                                 {platformTipAmount > 0 ? (
                                   <span className="text-sm font-normal opacity-90">
                                     {' '}

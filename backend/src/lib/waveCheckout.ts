@@ -93,16 +93,11 @@ export async function waveGetCheckoutSession(
   return data as WaveCheckoutSessionResponse;
 }
 
-function normalizeWaveAmountToInt(amountStr: string): number {
+/** Returns true if Wave-reported gross amount matches our expected charge (compared in bututs/cents). */
+export function waveAmountMatchesExpected(amountStr: string, expected: number): boolean {
   const n = Number.parseFloat(amountStr);
   if (!Number.isFinite(n)) {
-    return NaN;
+    return false;
   }
-  return Math.round(n);
-}
-
-/** Returns true if Wave-reported gross amount matches our expected donation (integer GMD / wallet unit). */
-export function waveAmountMatchesExpected(amountStr: string, expected: number): boolean {
-  const v = normalizeWaveAmountToInt(amountStr);
-  return v === expected;
+  return Math.round(n * 100) === Math.round(expected * 100);
 }

@@ -12,6 +12,7 @@ import { optionalAuthenticate, AuthRequest } from '../lib/auth.js';
 import { env } from '../config/env.js';
 import { donationCheckoutBodySchema } from '../lib/donationCheckoutSchema.js';
 import { easypayPartnerConfigured } from '../lib/easypayPartner.js';
+import { roundMoney } from '../lib/money.js';
 import { easypayPaymentsRouter } from './easypayPayments.js';
 
 export const paymentsRouter = Router();
@@ -165,12 +166,13 @@ paymentsRouter.post(
 
     const waveCurrency = env.WAVE_CHECKOUT_CURRENCY.trim().toUpperCase() || 'GMD';
     const platformTip = body.platformTipAmount ?? 0;
-    const waveChargeTotal = body.amount + platformTip;
+    const waveChargeTotal = roundMoney(body.amount + platformTip);
     if (waveChargeTotal > 2_000_000_000) {
       res.status(400).json({ message: 'Combined campaign donation and platform tip is too large.' });
       return;
     }
-    const amountString = String(waveChargeTotal);
+    // Wave expects a decimal string, e.g. "150.75".
+    const amountString = waveChargeTotal.toFixed(2);
 
     const waveSession = await waveCreateCheckoutSession({
       amount: amountString,

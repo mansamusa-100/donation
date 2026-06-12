@@ -18,6 +18,7 @@ import {
   withdrawalProcessingFeeFromGross
 } from '../config/fees.js';
 import { MAX_PLATFORM_TIP_PER_CHECKOUT } from '../config/platformTip.js';
+import { boundedMoneySchema } from '../lib/money.js';
 import { applyDonationToLedger, recordPlatformTip } from '../lib/processDonationLedger.js';
 import { HttpError } from '../lib/HttpError.js';
 import {
@@ -102,13 +103,9 @@ const createCampaignSchema = z
 const createDonationSchema = z.object({
   /** Optional when authenticated; server uses account full name if missing (non-anonymous). */
   donorName: z.string().max(80).optional(),
-  amount: z.number().int().positive(),
+  amount: boundedMoneySchema(1, 2_000_000_000),
   /** Voluntary platform tip (same currency), recorded separately from the campaign donation. */
-  platformTipAmount: z
-    .number()
-    .int()
-    .min(0)
-    .max(MAX_PLATFORM_TIP_PER_CHECKOUT)
+  platformTipAmount: boundedMoneySchema(0, MAX_PLATFORM_TIP_PER_CHECKOUT)
     .optional()
     .default(0),
   currency: z.nativeEnum(Currency).default('GMD'),
@@ -119,7 +116,7 @@ const createDonationSchema = z.object({
 
 const createWithdrawalRequestSchema = z.object({
   campaignSlug: z.string().min(1),
-  amount: z.number().int().positive(),
+  amount: boundedMoneySchema(1, 2_000_000_000),
   payoutMethodId: z.string().min(1),
   note: z.string().max(500).optional()
 });

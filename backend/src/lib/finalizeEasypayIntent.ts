@@ -5,14 +5,15 @@ import { serializeCampaign } from './serializers.js';
 import { tryFinalizeCampaignEnded } from './campaignLifecycle.js';
 import { sendDonationThankYouEmail } from './mail.js';
 
-function parseGmdTotal(value: unknown): number | null {
+/** Parse a reported GMD total in bututs/cents so decimal amounts compare exactly. */
+function parseGmdTotalCents(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.round(value);
+    return Math.round(value * 100);
   }
   if (typeof value === 'string') {
     const n = Number.parseFloat(value);
     if (Number.isFinite(n)) {
-      return Math.round(n);
+      return Math.round(n * 100);
     }
   }
   return null;
@@ -29,8 +30,8 @@ export async function finalizeEasypayIntentPaid(params: {
   grossAmountFromWebhook: unknown;
 }): Promise<void> {
   const { intent, webhookPaymentId } = params;
-  const expectedGross = intent.amount + intent.platformTipAmount;
-  const got = parseGmdTotal(params.grossAmountFromWebhook);
+  const expectedGross = Math.round((intent.amount + intent.platformTipAmount) * 100);
+  const got = parseGmdTotalCents(params.grossAmountFromWebhook);
   if (got !== null && got !== expectedGross) {
     console.warn('[easypay] amount mismatch vs intent', {
       partnerExternalBookingId: intent.partnerExternalBookingId,
