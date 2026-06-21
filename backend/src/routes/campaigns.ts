@@ -21,6 +21,7 @@ import { MAX_PLATFORM_TIP_PER_CHECKOUT } from '../config/platformTip.js';
 import { boundedMoneySchema } from '../lib/money.js';
 import { applyDonationToLedger, recordPlatformTip } from '../lib/processDonationLedger.js';
 import { HttpError } from '../lib/HttpError.js';
+import { env } from '../config/env.js';
 import {
   computeDaysLeftFromEndsAt,
   validateNewCampaignEndDate
@@ -765,6 +766,11 @@ campaignsRouter.post(
   '/:slug/donations',
   optionalAuthenticate,
   asyncHandler(async (req: AuthRequest, res) => {
+    if (env.NODE_ENV === 'production') {
+      res.status(404).json({ message: 'Not found' });
+      return;
+    }
+
     const body = createDonationSchema.parse(req.body);
 
     const campaign = await prisma.campaign.findUnique({

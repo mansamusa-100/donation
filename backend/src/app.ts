@@ -6,6 +6,12 @@ import multer from 'multer';
 import { ZodError } from 'zod';
 import { HttpError } from './lib/HttpError.js';
 import { env } from './config/env.js';
+import {
+  authRateLimiter,
+  configureTrustProxy,
+  generalRateLimiter,
+  helmetMiddleware
+} from './middleware/security.js';
 import { campaignsRouter } from './routes/campaigns.js';
 import { categoriesRouter } from './routes/categories.js';
 import { healthRouter } from './routes/health.js';
@@ -23,6 +29,9 @@ import { handleEasypayPartnerWebhook } from './routes/easypayWebhook.js';
 
 export const app = express();
 
+configureTrustProxy(app);
+app.use(helmetMiddleware);
+app.use(generalRateLimiter);
 app.use(
   cors({
     origin: env.CLIENT_ORIGIN,
@@ -32,19 +41,26 @@ app.use(
 /** Raw body required for Wave-Signature HMAC — must run before global express.json(). */
 app.post(
   '/api/payments/wave/webhook',
-  express.raw({ type: 'application/json' }),
+  express.raw({ type: 'application/json', limit: '256kb' }),
   asyncHandler(handleWaveWebhook)
 );
 app.post(
   '/api/payments/easypay/webhook',
-  express.raw({ type: 'application/json' }),
+  express.raw({ type: 'application/json', limit: '256kb' }),
   asyncHandler(handleEasypayPartnerWebhook)
 );
-app.use(express.json());
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+app.use(express.json({ limit: '256kb' }));
+
+const uploadsRoot = path.join(process.cwd(), 'uploads');
+/** Public campaign imagery and avatars only — verification IDs are admin-only. */
+app.use('/uploads/avatars', express.static(path.join(uploadsRoot, 'avatars')));
+app.use('/uploads/campaign-covers', express.static(path.join(uploadsRoot, 'campaign-covers')));
+app.use('/uploads/verification-ids', (_req, res) => {
+  res.status(404).json({ message: 'Not found' });
+});
 
 app.use('/api/health', healthRouter);
-app.use('/api/auth', authRouter);
+app.use('/api/auth', authRateLimiter, authRouter);
 app.use('/api/campaigns', campaignsRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/stats', statsRouter);
@@ -78,7 +94,7 @@ if (fs.existsSync(spaIndex)) {
 
 app.use((req, res) => {
   res.status(404).json({
-    message: `Route not found: ${req.method} ${req.originalUrl}`
+    message: env.NODE_ENV === 'production' ? 'Not found' : `Route not found: ${req.method} ${req.originalUrl}`
   });
 });
 
@@ -120,7 +136,11 @@ app.use(
     }
 
     const message =
-      error instanceof Error ? error.message : 'Internal server error';
+      env.NODE_ENV === 'production'
+        ? 'Internal server error'
+        : error instanceof Error
+          ? error.message
+          : 'Internal server error';
 
     console.error(error);
     res.status(500).json({ message });

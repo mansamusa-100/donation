@@ -1226,6 +1226,7 @@ const easypayProvisionBodySchema = z.object({
  */
 adminRouter.post(
   '/easypay/provision',
+  requireAdminPanel('easypay'),
   asyncHandler(async (req: AuthRequest, res) => {
     if (!getEasypayPartnerApiCredentialsOk()) {
       res.status(503).json({

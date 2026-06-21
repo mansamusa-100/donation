@@ -284,29 +284,28 @@ authRouter.post(
     let isNewUser = false;
 
     if (!user) {
-      // Auto-link: Google verified ownership of this email, so it is safe to
-      // attach the Google identity to an existing email/password account.
       const existing = await prisma.user.findFirst({
         where: { email: { equals: email, mode: 'insensitive' } }
       });
 
       if (existing) {
-        user = await prisma.user.update({
-          where: { id: existing.id },
-          data: { googleId: payload.sub }
+        res.status(409).json({
+          message:
+            'An account with this email already exists. Sign in with your email and password instead.'
         });
-      } else {
-        isNewUser = true;
-        const avatarUrl = await importGoogleProfilePicture(payload.picture);
-        user = await prisma.user.create({
-          data: {
-            email,
-            fullName: payload.name?.trim() || email.split('@')[0],
-            googleId: payload.sub,
-            avatarUrl
-          }
-        });
+        return;
       }
+
+      isNewUser = true;
+      const avatarUrl = await importGoogleProfilePicture(payload.picture);
+      user = await prisma.user.create({
+        data: {
+          email,
+          fullName: payload.name?.trim() || email.split('@')[0],
+          googleId: payload.sub,
+          avatarUrl
+        }
+      });
     }
 
     if (!user.isActive) {

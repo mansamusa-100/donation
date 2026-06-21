@@ -12,7 +12,7 @@ export interface AuthRequest extends Request {
   adminPanelPermissions?: string[];
 }
 
-export const JWT_SECRET = env.JWT_SECRET || 'your-secret-key-change-in-production';
+export const JWT_SECRET = env.JWT_SECRET;
 
 export function generateToken(userId: string): string {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '7d' });

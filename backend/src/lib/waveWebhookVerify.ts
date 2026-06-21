@@ -2,6 +2,9 @@ import crypto from 'node:crypto';
 import type { Request } from 'express';
 import { env } from '../config/env.js';
 
+/** Reject Wave webhook signatures older than this (replay protection). */
+const WAVE_WEBHOOK_MAX_AGE_SEC = 5 * 60;
+
 /** Wave docs: HMAC-SHA256 over `timestamp + rawBody`, header like `t=...,v1=...`. */
 export function verifyWaveWebhookSignature(
   rawBody: string,
@@ -15,6 +18,14 @@ export function verifyWaveWebhookSignature(
   const timestampPart = parts.find((p) => p.startsWith('t='));
   const timestamp = timestampPart?.split('=', 2)[1];
   if (!timestamp) {
+    return false;
+  }
+  const tsSec = Number.parseInt(timestamp, 10);
+  if (!Number.isFinite(tsSec)) {
+    return false;
+  }
+  const ageSec = Math.abs(Math.floor(Date.now() / 1000) - tsSec);
+  if (ageSec > WAVE_WEBHOOK_MAX_AGE_SEC) {
     return false;
   }
   const signatures = parts

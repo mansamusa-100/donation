@@ -74,7 +74,20 @@ export async function finalizeWaveIntentFromCheckoutSession(
     return { kind: 'amount_mismatch' };
   }
 
-  const updatedCampaign = await prisma.$transaction(async (tx) => {
+  const txResult = await prisma.$transaction(async (tx) => {
+    const locked = await tx.wavePaymentIntent.findUnique({
+      where: { id: intent.id }
+    });
+    if (locked?.donationId) {
+      const campaign = await tx.campaign.findUnique({
+        where: { id: intent.campaignId },
+        include: {
+          donations: { orderBy: { createdAt: 'desc' }, take: 10 }
+        }
+      });
+      return { kind: 'already_completed' as const, campaign };
+    }
+
     const donation = await applyDonationToLedger(tx, {
       campaignId: intent.campaignId,
       campaignSlug: intent.campaign.slug,
@@ -110,13 +123,23 @@ export async function finalizeWaveIntentFromCheckoutSession(
 
     await tryFinalizeCampaignEnded(tx, intent.campaignId);
 
-    return tx.campaign.findUnique({
+    const campaign = await tx.campaign.findUnique({
       where: { id: intent.campaignId },
       include: {
         donations: { orderBy: { createdAt: 'desc' }, take: 10 }
       }
     });
+    return { kind: 'succeeded' as const, campaign };
   });
+
+  if (txResult.kind === 'already_completed') {
+    return {
+      kind: 'already_completed',
+      campaign: txResult.campaign ? serializeCampaign(txResult.campaign) : null
+    };
+  }
+
+  const updatedCampaign = txResult.campaign;
 
   if (intent.userId) {
     void (async () => {

@@ -51,6 +51,11 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().default('')
 });
 
+const INSECURE_JWT_SECRETS = new Set([
+  'your-secret-key-change-in-production',
+  'change-me-in-production'
+]);
+
 const parsedEnv = envSchema.safeParse(process.env);
 
 if (!parsedEnv.success) {
@@ -58,4 +63,15 @@ if (!parsedEnv.success) {
   throw new Error('Server environment validation failed');
 }
 
-export const env = parsedEnv.data;
+const env = parsedEnv.data;
+
+if (env.NODE_ENV === 'production') {
+  const secret = env.JWT_SECRET.trim();
+  if (!secret || secret.length < 32 || INSECURE_JWT_SECRETS.has(secret)) {
+    throw new Error(
+      'JWT_SECRET must be a strong random value (at least 32 characters) in production. Generate one with: openssl rand -base64 48'
+    );
+  }
+}
+
+export { env };
