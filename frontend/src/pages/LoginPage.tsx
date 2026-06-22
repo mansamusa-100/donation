@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Mail, Lock, AlertCircle } from 'lucide-react';
+import { Mail, AlertCircle } from 'lucide-react';
 import { GoogleSignInButton } from '../components/GoogleSignInButton';
+import { PasswordInput } from '../components/PasswordInput';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
@@ -76,17 +77,13 @@ export function LoginPage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-3 text-gray-400" size={20} />
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="********"
-                required
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
+            <PasswordInput
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="********"
+              required
+              autoComplete="current-password"
+            />
             <div className="text-right">
               <Link
                 to="/forgot-password"

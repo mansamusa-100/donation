@@ -38,6 +38,7 @@ import {
 import { sendBankTransferRejectedEmail } from '../lib/mail.js';
 import { HttpError } from '../lib/HttpError.js';
 import { boundedMoneySchema } from '../lib/money.js';
+import { newPasswordSchema } from '../lib/passwordPolicy.js';
 
 const adminRouter = Router();
 
@@ -984,7 +985,10 @@ adminRouter.patch(
 
     const updatedUser = await prisma.user.update({
       where: { id: userId },
-      data: { isActive },
+      data: {
+        isActive,
+        ...(!isActive ? { tokenVersion: { increment: 1 } } : {})
+      },
       select: {
         id: true,
         email: true,
@@ -1065,7 +1069,7 @@ adminRouter.get(
 
 const createAdminAccountSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  password: newPasswordSchema,
   fullName: z.string().min(2),
   phoneNumber: z.string().max(30).optional(),
   /** Empty = full admin panel; otherwise only these areas. */

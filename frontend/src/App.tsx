@@ -4,8 +4,6 @@ import { Footer } from './components/Footer';
 import { Navbar } from './components/Navbar';
 import { RouteLoader } from './components/RouteLoader';
 import { HomePage } from './pages/HomePage';
-import { useAuth } from './context/AuthContext';
-import { setAuthToken } from './lib/api';
 
 const ExplorePage = lazy(async () => ({
   default: (await import('./pages/ExplorePage')).ExplorePage
@@ -151,12 +149,6 @@ function AppChrome() {
 }
 
 function AppInner() {
-  const { token } = useAuth();
-
-  useEffect(() => {
-    setAuthToken(token);
-  }, [token]);
-
   return (
     <BrowserRouter>
       <ScrollManager />

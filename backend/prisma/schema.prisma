@@ -76,6 +76,8 @@ model User {
   adminPanelPermissions String[] @default([])
   passwordResetToken   String?   @unique
   passwordResetExpires DateTime?
+  /// Increment to invalidate all outstanding JWTs (password reset, deactivation, etc.).
+  tokenVersion         Int       @default(0)
   campaigns       Campaign[]
   extensionRequestsSubmitted CampaignExtensionRequest[] @relation("ExtensionRequestsByUser")
   extensionRequestsReviewed  CampaignExtensionRequest[] @relation("ExtensionReviewsByAdmin")

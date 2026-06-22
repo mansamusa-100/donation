@@ -55,6 +55,10 @@ interface ApiCreateDonationInput {
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
+const defaultFetchInit: RequestInit = {
+  credentials: 'include'
+};
+
 /** Build optional query string for admin list endpoints */
 function adminListQuery(page?: number, pageSize?: number) {
   const p = new URLSearchParams();
@@ -99,23 +103,15 @@ function adminAuditQuery(params: {
   return q ? `?${q}` : '';
 }
 
-let authToken: string | null = null;
-
-export function setAuthToken(token: string | null) {
-  authToken = token;
-}
-
 async function request<T>(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
   const isFormData = init?.body instanceof FormData;
   if (!isFormData && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
-  if (authToken) {
-    headers.set('Authorization', `Bearer ${authToken}`);
-  }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...defaultFetchInit,
     ...init,
     headers
   });
@@ -130,11 +126,9 @@ async function request<T>(path: string, init?: RequestInit) {
 
 async function requestBlob(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
-  if (authToken) {
-    headers.set('Authorization', `Bearer ${authToken}`);
-  }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...defaultFetchInit,
     ...init,
     headers
   });
@@ -152,6 +146,34 @@ export function getCurrentUser() {
 }
 
 export const api = {
+  login(email: string, password: string) {
+    return request<{ user: User }>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    });
+  },
+
+  register(email: string, password: string, fullName: string, phoneNumber?: string) {
+    return request<{ user: User }>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, fullName, phoneNumber })
+    });
+  },
+
+  loginWithGoogle(credential: string) {
+    return request<{ user: User; isNewUser?: boolean }>('/api/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ credential })
+    });
+  },
+
+  logout() {
+    return request<{ message: string }>('/api/auth/logout', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  },
+
   requestPasswordReset(email: string) {
     return request<{ message: string }>('/api/auth/forgot-password', {
       method: 'POST',
@@ -279,28 +301,18 @@ export const api = {
   uploadCampaignCoverImage(file: File) {
     const formData = new FormData();
     formData.append('file', file);
-    const headers = new Headers();
-    if (authToken) {
-      headers.set('Authorization', `Bearer ${authToken}`);
-    }
     return request<{ url: string }>('/api/uploads/campaign-cover', {
       method: 'POST',
-      body: formData,
-      headers
+      body: formData
     });
   },
 
   uploadProfilePicture(file: File) {
     const formData = new FormData();
     formData.append('file', file);
-    const headers = new Headers();
-    if (authToken) {
-      headers.set('Authorization', `Bearer ${authToken}`);
-    }
     return request<{ url: string }>('/api/uploads/profile-picture', {
       method: 'POST',
-      body: formData,
-      headers
+      body: formData
     });
   },
 
@@ -314,14 +326,9 @@ export const api = {
   uploadVerificationId(file: File) {
     const formData = new FormData();
     formData.append('file', file);
-    const headers = new Headers();
-    if (authToken) {
-      headers.set('Authorization', `Bearer ${authToken}`);
-    }
     return request<{ url: string }>('/api/uploads/verification-id', {
       method: 'POST',
-      body: formData,
-      headers
+      body: formData
     });
   },
 

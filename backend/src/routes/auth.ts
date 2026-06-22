@@ -12,21 +12,26 @@ import {
   authenticate,
   AuthRequest
 } from '../lib/auth.js';
+import { setAuthCookie, clearAuthCookie } from '../lib/authCookies.js';
 import { env } from '../config/env.js';
 import { sendPasswordResetEmail, sendWelcomeEmail } from '../lib/mail.js';
+import {
+  loginPasswordSchema,
+  newPasswordSchema
+} from '../lib/passwordPolicy.js';
 
 const authRouter = Router();
 
 const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: newPasswordSchema,
   fullName: z.string().min(2),
   phoneNumber: z.string().optional()
 });
 
 const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6)
+  password: loginPasswordSchema
 });
 
 const forgotPasswordSchema = z.object({
@@ -35,7 +40,7 @@ const forgotPasswordSchema = z.object({
 
 const resetPasswordSchema = z.object({
   token: z.string().min(10, 'Invalid reset link'),
-  password: z.string().min(6, 'Password must be at least 6 characters')
+  password: newPasswordSchema
 });
 
 const googleAuthSchema = z.object({
@@ -43,6 +48,33 @@ const googleAuthSchema = z.object({
 });
 
 const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID || undefined);
+
+function serializeAuthUser(user: {
+  id: string;
+  email: string;
+  fullName: string;
+  role: 'ADMIN' | 'USER';
+  adminPanelPermissions: string[];
+}) {
+  return {
+    id: user.id,
+    email: user.email,
+    fullName: user.fullName,
+    role: user.role,
+    adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
+  };
+}
+
+function startSession(
+  res: import('express').Response,
+  user: { id: string; tokenVersion: number },
+  body: Record<string, unknown>,
+  status = 200
+) {
+  const token = generateToken(user.id, user.tokenVersion);
+  setAuthCookie(res, token);
+  res.status(status).json(body);
+}
 
 /**
  * Download the Google profile photo and store it through our own avatar
@@ -102,24 +134,14 @@ authRouter.post(
         email: true,
         fullName: true,
         role: true,
-        adminPanelPermissions: true
+        adminPanelPermissions: true,
+        tokenVersion: true
       }
     });
 
-    const token = generateToken(user.id);
-
     void sendWelcomeEmail({ to: user.email, fullName: user.fullName });
 
-    res.status(201).json({
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
-      },
-      token
-    });
+    startSession(res, user, { user: serializeAuthUser(user) }, 201);
   })
 );
 
@@ -184,7 +206,8 @@ authRouter.post(
       data: {
         password: hashed,
         passwordResetToken: null,
-        passwordResetExpires: null
+        passwordResetExpires: null,
+        tokenVersion: { increment: 1 }
       }
     });
 
@@ -206,7 +229,8 @@ authRouter.post(
         role: true,
         password: true,
         isActive: true,
-        adminPanelPermissions: true
+        adminPanelPermissions: true,
+        tokenVersion: true
       }
     });
 
@@ -235,18 +259,15 @@ authRouter.post(
       return;
     }
 
-    const token = generateToken(user.id);
+    startSession(res, user, { user: serializeAuthUser(user) });
+  })
+);
 
-    res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
-      },
-      token
-    });
+authRouter.post(
+  '/logout',
+  asyncHandler(async (_req, res) => {
+    clearAuthCookie(res);
+    res.json({ message: 'Signed out' });
   })
 );
 
@@ -317,17 +338,8 @@ authRouter.post(
       void sendWelcomeEmail({ to: user.email, fullName: user.fullName });
     }
 
-    const token = generateToken(user.id);
-
-    res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
-      },
-      token,
+    startSession(res, user, {
+      user: serializeAuthUser(user),
       isNewUser
     });
   })

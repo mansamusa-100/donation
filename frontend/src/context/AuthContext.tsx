@@ -1,79 +1,52 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
-import { getCurrentUser, setAuthToken } from '../lib/api';
+import { api, getCurrentUser } from '../lib/api';
 import type { User } from '../types/user';
 
 export type { User } from '../types/user';
 
 interface AuthContextType {
   user: User | null;
-  token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<User>;
   loginWithGoogle: (credential: string) => Promise<User>;
   register: (email: string, password: string, fullName: string, phoneNumber?: string) => Promise<User>;
   refreshUser: () => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const TOKEN_STORAGE_KEY = 'barakahfund_token';
-const LEGACY_TOKEN_KEY = 'gambiafund_token';
-/** Legacy: user profile is no longer persisted; remove on load. */
+const LEGACY_TOKEN_KEY = 'barakahfund_token';
+const LEGACY_TOKEN_KEY_OLD = 'gambiafund_token';
 const USER_STORAGE_KEY_LEGACY = 'gambiafund_user';
 
-function readStoredToken(): string | null {
-  const current = localStorage.getItem(TOKEN_STORAGE_KEY);
-  if (current) {
-    return current;
-  }
-  const migrated = localStorage.getItem(LEGACY_TOKEN_KEY);
-  if (migrated) {
-    localStorage.setItem(TOKEN_STORAGE_KEY, migrated);
-    localStorage.removeItem(LEGACY_TOKEN_KEY);
-    return migrated;
-  }
-  return null;
+function clearLegacyTokenStorage() {
+  localStorage.removeItem(LEGACY_TOKEN_KEY);
+  localStorage.removeItem(LEGACY_TOKEN_KEY_OLD);
+  localStorage.removeItem(USER_STORAGE_KEY_LEGACY);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const clearSession = useCallback(() => {
     setUser(null);
-    setToken(null);
-    setAuthToken(null);
-    localStorage.removeItem(TOKEN_STORAGE_KEY);
-    localStorage.removeItem(LEGACY_TOKEN_KEY);
-    localStorage.removeItem(USER_STORAGE_KEY_LEGACY);
+    clearLegacyTokenStorage();
   }, []);
 
-  // Restore session: token only, then /api/auth/me (user stays in memory)
   useEffect(() => {
     let cancelled = false;
-    const storedToken = readStoredToken();
-    localStorage.removeItem(USER_STORAGE_KEY_LEGACY);
+    clearLegacyTokenStorage();
 
     async function bootstrap() {
-      if (!storedToken) {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      setToken(storedToken);
-      setAuthToken(storedToken);
       try {
         const me = await getCurrentUser();
         if (!cancelled) {
           setUser(me);
         }
-      } catch (error) {
-        console.error('Session restore failed:', error);
+      } catch {
         if (!cancelled) {
           clearSession();
         }
@@ -91,11 +64,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession]);
 
   const refreshUser = useCallback(async () => {
-    const t = readStoredToken();
-    if (!t) {
-      return;
-    }
-    setAuthToken(t);
     const me = await getCurrentUser();
     setUser(me);
   }, []);
@@ -103,24 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string): Promise<User> => {
     setIsLoading(true);
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL || ''}/api/auth/login`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password })
-        }
-      );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Login failed');
-      }
-
-      const data = await response.json();
-      setToken(data.token);
-      localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
-      setAuthToken(data.token);
+      await api.login(email, password);
       const me = await getCurrentUser();
       setUser(me);
       return me;
@@ -132,24 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithGoogle = async (credential: string): Promise<User> => {
     setIsLoading(true);
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL || ''}/api/auth/google`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ credential })
-        }
-      );
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.message || 'Google sign-in failed');
-      }
-
-      const data = await response.json();
-      setToken(data.token);
-      localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
-      setAuthToken(data.token);
+      await api.loginWithGoogle(credential);
       const me = await getCurrentUser();
       setUser(me);
       return me;
@@ -166,29 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   ): Promise<User> => {
     setIsLoading(true);
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL || ''}/api/auth/register`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email,
-            password,
-            fullName,
-            phoneNumber
-          })
-        }
-      );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Registration failed');
-      }
-
-      const data = await response.json();
-      setToken(data.token);
-      localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
-      setAuthToken(data.token);
+      await api.register(email, password, fullName, phoneNumber);
       const me = await getCurrentUser();
       setUser(me);
       return me;
@@ -197,7 +109,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await api.logout();
+    } catch {
+      // Clear local state even if the network call fails.
+    }
     clearSession();
   };
 
@@ -205,9 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        token,
         isLoading,
-        isAuthenticated: !!user && !!token,
+        isAuthenticated: !!user,
         login,
         loginWithGoogle,
         register,

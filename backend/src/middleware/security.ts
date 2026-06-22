@@ -10,9 +10,44 @@ export function configureTrustProxy(app: { set: (key: string, value: number) => 
   }
 }
 
+function cspConnectSources(): string[] {
+  const sources = new Set<string>(["'self'", 'https://accounts.google.com', 'https://oauth2.googleapis.com']);
+
+  try {
+    sources.add(new URL(env.CLIENT_ORIGIN).origin);
+  } catch {
+    // ignore invalid CLIENT_ORIGIN
+  }
+
+  const apiBase = env.APP_PUBLIC_BASE_URL.trim();
+  if (apiBase) {
+    try {
+      sources.add(new URL(apiBase).origin);
+    } catch {
+      // ignore
+    }
+  }
+
+  return [...sources];
+}
+
 export const helmetMiddleware: RequestHandler = helmet({
-  // Tune CSP per deployment (Google Sign-In, Easypay iframe, etc.) at the reverse proxy if needed.
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      objectSrc: ["'none'"],
+      scriptSrc: ["'self'", 'https://accounts.google.com', 'https://apis.google.com'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+      connectSrc: cspConnectSources(),
+      frameSrc: ["'self'", 'https:'],
+      frameAncestors: ["'self'"],
+      ...(env.NODE_ENV === 'production' ? { upgradeInsecureRequests: [] } : {})
+    }
+  },
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 });
 

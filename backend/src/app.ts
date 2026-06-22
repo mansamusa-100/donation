@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import express from 'express';
 import multer from 'multer';
 import { ZodError } from 'zod';
@@ -50,6 +51,7 @@ app.post(
   asyncHandler(handleEasypayPartnerWebhook)
 );
 app.use(express.json({ limit: '256kb' }));
+app.use(cookieParser());
 
 const uploadsRoot = path.join(process.cwd(), 'uploads');
 /** Public campaign imagery and avatars only — verification IDs are admin-only. */

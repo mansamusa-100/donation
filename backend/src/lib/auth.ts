@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcryptjs from 'bcryptjs';
 import { env } from '../config/env.js';
 import { hasAdminPanelAccess, hasAnyAdminPanelAccess, type AdminPanelKey } from '../config/adminPermissions.js';
+import { readAuthToken } from './authCookies.js';
 import { prisma } from './prisma.js';
 
 export interface AuthRequest extends Request {
@@ -14,15 +15,23 @@ export interface AuthRequest extends Request {
 
 export const JWT_SECRET = env.JWT_SECRET;
 
-export function generateToken(userId: string): string {
-  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '7d' });
+interface JwtPayload {
+  userId: string;
+  tv: number;
 }
 
-export function verifyToken(token: string): { userId: string } | null {
+export function generateToken(userId: string, tokenVersion: number): string {
+  return jwt.sign({ userId, tv: tokenVersion }, JWT_SECRET, { expiresIn: '7d' });
+}
+
+export function verifyToken(token: string): JwtPayload | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
-    return decoded;
-  } catch (error) {
+    const decoded = jwt.verify(token, JWT_SECRET) as Partial<JwtPayload>;
+    if (typeof decoded.userId !== 'string' || typeof decoded.tv !== 'number') {
+      return null;
+    }
+    return { userId: decoded.userId, tv: decoded.tv };
+  } catch {
     return null;
   }
 }
@@ -38,13 +47,39 @@ export async function comparePassword(
   return bcryptjs.compare(password, hashedPassword);
 }
 
+async function loadAuthenticatedUser(decoded: JwtPayload): Promise<{
+  id: string;
+  role: 'ADMIN' | 'USER';
+  adminPanelPermissions: string[];
+} | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: decoded.userId },
+    select: {
+      id: true,
+      role: true,
+      isActive: true,
+      tokenVersion: true,
+      adminPanelPermissions: true
+    }
+  });
+
+  if (!user || !user.isActive || user.tokenVersion !== decoded.tv) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    role: user.role,
+    adminPanelPermissions: user.adminPanelPermissions
+  };
+}
+
 export async function authenticate(
   req: AuthRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.split(' ')[1];
+  const token = readAuthToken(req);
 
   if (!token) {
     res.status(401).json({ message: 'Missing authentication token' });
@@ -57,19 +92,13 @@ export async function authenticate(
     return;
   }
 
-  req.userId = decoded.userId;
-
-  // Fetch user role from database
-  const user = await prisma.user.findUnique({
-    where: { id: decoded.userId },
-    select: { role: true }
-  });
-
+  const user = await loadAuthenticatedUser(decoded);
   if (!user) {
-    res.status(401).json({ message: 'User not found' });
+    res.status(401).json({ message: 'Invalid or expired token' });
     return;
   }
 
+  req.userId = user.id;
   req.userRole = user.role;
   next();
 }
@@ -158,8 +187,7 @@ export async function optionalAuthenticate(
   _res: Response,
   next: NextFunction
 ): Promise<void> {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.split(' ')[1];
+  const token = readAuthToken(req);
 
   if (!token) {
     next();
@@ -172,14 +200,9 @@ export async function optionalAuthenticate(
     return;
   }
 
-  req.userId = decoded.userId;
-
-  const user = await prisma.user.findUnique({
-    where: { id: decoded.userId },
-    select: { role: true }
-  });
-
+  const user = await loadAuthenticatedUser(decoded);
   if (user) {
+    req.userId = user.id;
     req.userRole = user.role;
   }
 

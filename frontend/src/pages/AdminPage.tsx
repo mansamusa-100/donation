@@ -17,9 +17,11 @@ import {
   X
 } from 'lucide-react';
 import { BankAdminPanel } from '../components/admin/BankAdminPanel';
+import { PasswordInput } from '../components/PasswordInput';
 import { useAuth } from '../context/AuthContext';
 import { BRAND_LOGO_SRC, BRAND_NAME } from '../lib/brand';
 import { api } from '../lib/api';
+import { isPasswordLongEnough, PASSWORD_POLICY_MESSAGE } from '../lib/passwordPolicy';
 import { mediaUrl } from '../lib/mediaUrl';
 import {
   AUDIT_EVENT_TYPES,
@@ -755,6 +757,10 @@ export function AdminPage() {
     setAccountActionError('');
     if (!newAdminFull && newAdminKeys.length === 0) {
       setAccountActionError('Choose at least one area, or use full access.');
+      return;
+    }
+    if (!isPasswordLongEnough(newAdmin.password)) {
+      setAccountActionError(PASSWORD_POLICY_MESSAGE);
       return;
     }
     setNewAdminSubmitting(true);
@@ -1601,15 +1607,18 @@ export function AdminPage() {
                     <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="admin-password">
                       Password
                     </label>
-                    <input
-                      id="admin-password"
-                      type="password"
-                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                      value={newAdmin.password}
-                      onChange={(e) => setNewAdmin((a) => ({ ...a, password: e.target.value }))}
-                      required
-                      minLength={6}
-                    />
+                    <div className="mt-1">
+                      <PasswordInput
+                        id="admin-password"
+                        value={newAdmin.password}
+                        onChange={(e) => setNewAdmin((a) => ({ ...a, password: e.target.value }))}
+                        required
+                        minLength={8}
+                        autoComplete="new-password"
+                        placeholder="At least 8 characters"
+                        inputClassName="w-full border border-slate-200 rounded-lg pl-10 pr-11 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
                   </div>
                   <div className="sm:col-span-2">
                     <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="admin-phone">

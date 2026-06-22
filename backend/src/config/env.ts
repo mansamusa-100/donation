@@ -48,7 +48,11 @@ const envSchema = z.object({
   /** Business created in Easypay dashboard (single platform merchant) */
   EASYPAY_PARTNER_BUSINESS_ID: z.string().default(''),
   /** OAuth client ID from Google Auth Platform — enables "Continue with Google". */
-  GOOGLE_CLIENT_ID: z.string().default('')
+  GOOGLE_CLIENT_ID: z.string().default(''),
+  /** Optional parent domain for the session cookie (e.g. `.barakahfund.site` for app + API subdomains). */
+  AUTH_COOKIE_DOMAIN: z.string().default(''),
+  /** Session cookie SameSite. Use `none` only with HTTPS if frontend and API are on different sites. */
+  AUTH_COOKIE_SAME_SITE: z.enum(['lax', 'none', 'strict']).default('lax')
 });
 
 const INSECURE_JWT_SECRETS = new Set([
