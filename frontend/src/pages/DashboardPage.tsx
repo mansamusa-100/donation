@@ -18,6 +18,7 @@ import { mediaUrl } from '../lib/mediaUrl';
 import { DataLoadAlert } from '../components/DataLoadAlert';
 import { PayoutMethodsPanel } from '../components/PayoutMethodsPanel';
 import { ProfileAvatarEditor } from '../components/ProfileAvatarEditor';
+import { CloseAccountPanel } from '../components/CloseAccountPanel';
 import type { UserPayoutMethod } from '../types/payout';
 import type {
   Campaign,
@@ -505,6 +506,12 @@ export function DashboardPage() {
                 </div>
               </div>
             </div>
+
+            {user.role !== 'ADMIN' && (
+              <div className="mt-10">
+                <CloseAccountPanel />
+              </div>
+            )}
           </>
         )}
       </div>

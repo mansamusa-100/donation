@@ -144,8 +144,6 @@ type WithdrawalPayoutEmailFields = {
   paidAt?: Date | null;
 };
 
-// --- Transactional templates ---
-
 export async function sendWelcomeEmail(params: { to: string; fullName: string }): Promise<void> {
   const explore = `${clientBaseUrl()}/explore`;
   const subject = 'Welcome to BarakahFund';
@@ -162,6 +160,29 @@ export async function sendWelcomeEmail(params: { to: string; fullName: string })
     await sendEmail({ to: params.to, subject, text });
   } catch (err) {
     console.error('[mail] sendWelcomeEmail', err);
+  }
+}
+
+export async function sendAccountClosedEmail(params: {
+  to: string;
+  fullName: string;
+}): Promise<void> {
+  const subject = 'Your BarakahFund account was closed';
+  const text = [
+    `Hi ${params.fullName},`,
+    '',
+    'This confirms that your BarakahFund account has been closed as you requested.',
+    'You will no longer be able to sign in with this account.',
+    'Any live campaigns you created have been taken offline. Donation and payout records are kept for legal and financial compliance.',
+    '',
+    'If you did not request this, contact support immediately.',
+    '',
+    '— BarakahFund'
+  ].join('\n');
+  try {
+    await sendEmail({ to: params.to, subject, text });
+  } catch (err) {
+    console.error('[mail] sendAccountClosedEmail', err);
   }
 }
 

@@ -73,6 +73,8 @@ model User {
   avatarUrl       String?
   role            UserRole  @default(USER)
   isActive        Boolean   @default(true)
+  /// Set when the user self-closes their account (PII anonymized, sessions revoked).
+  accountClosedAt DateTime?
   adminPanelPermissions String[] @default([])
   passwordResetToken   String?   @unique
   passwordResetExpires DateTime?

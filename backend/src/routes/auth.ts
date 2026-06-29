@@ -14,7 +14,12 @@ import {
 } from '../lib/auth.js';
 import { setAuthCookie, clearAuthCookie } from '../lib/authCookies.js';
 import { env } from '../config/env.js';
+import { HttpError } from '../lib/HttpError.js';
 import { sendPasswordResetEmail, sendWelcomeEmail } from '../lib/mail.js';
+import {
+  closeUserAccount,
+  getAccountCloseBlockers
+} from '../lib/closeUserAccount.js';
 import {
   loginPasswordSchema,
   newPasswordSchema
@@ -104,6 +109,31 @@ const updateAvatarSchema = z.object({
     .regex(/^\/uploads\/avatars\/[\w.-]+$/, 'Invalid profile picture')
     .nullable()
 });
+
+const closeAccountSchema = z.object({
+  confirmPhrase: z.literal('CLOSE'),
+  password: z.string().optional(),
+  googleCredential: z.string().optional()
+});
+
+async function verifyGoogleIdForClose(credential: string): Promise<{ sub: string; email: string } | null> {
+  if (!env.GOOGLE_CLIENT_ID) {
+    return null;
+  }
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: env.GOOGLE_CLIENT_ID
+    });
+    const payload = ticket.getPayload();
+    if (!payload?.sub || !payload.email || payload.email_verified !== true) {
+      return null;
+    }
+    return { sub: payload.sub, email: payload.email.toLowerCase() };
+  } catch {
+    return null;
+  }
+}
 
 authRouter.post(
   '/register',
@@ -402,6 +432,56 @@ authRouter.patch(
     });
 
     res.json({ avatarUrl: user.avatarUrl });
+  })
+);
+
+authRouter.get(
+  '/me/close-account/eligibility',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const blockers = await getAccountCloseBlockers(req.userId!);
+    res.json({
+      canClose: blockers.length === 0,
+      blockers
+    });
+  })
+);
+
+authRouter.post(
+  '/me/close-account',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const body = closeAccountSchema.parse(req.body);
+    const blockers = await getAccountCloseBlockers(req.userId!);
+    if (blockers.length > 0) {
+      res.status(400).json({
+        message: blockers[0],
+        blockers
+      });
+      return;
+    }
+
+    try {
+      const result = await closeUserAccount(
+        req.userId!,
+        {
+          password: body.password,
+          googleCredential: body.googleCredential
+        },
+        verifyGoogleIdForClose
+      );
+      clearAuthCookie(res);
+      res.json({
+        message: 'Your account has been closed.',
+        campaignsClosed: result.campaignsClosed
+      });
+    } catch (err) {
+      if (err instanceof HttpError) {
+        res.status(err.status).json({ message: err.message });
+        return;
+      }
+      throw err;
+    }
   })
 );
 

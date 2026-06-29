@@ -1,0 +1,1 @@
+ALTER TABLE "User" ADD COLUMN "accountClosedAt" TIMESTAMP(3);

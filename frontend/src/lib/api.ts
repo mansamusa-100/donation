@@ -323,6 +323,23 @@ export const api = {
     });
   },
 
+  getCloseAccountEligibility() {
+    return request<{ canClose: boolean; blockers: string[] }>(
+      '/api/auth/me/close-account/eligibility'
+    );
+  },
+
+  closeAccount(payload: {
+    confirmPhrase: 'CLOSE';
+    password?: string;
+    googleCredential?: string;
+  }) {
+    return request<{ message: string; campaignsClosed: number }>('/api/auth/me/close-account', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
   uploadVerificationId(file: File) {
     const formData = new FormData();
     formData.append('file', file);

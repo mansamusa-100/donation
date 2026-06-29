@@ -124,7 +124,8 @@ export const AUDIT_EVENT_TYPES = [
   'ADMIN_PERMISSIONS_CHANGED',
   'EASYPAY_PROVISION',
   'BANK_TRANSFER_CONFIRMED',
-  'BANK_TRANSFER_REJECTED'
+  'BANK_TRANSFER_REJECTED',
+  'USER_ACCOUNT_CLOSED'
 ] as const;
 
 export interface AdminAuditLogItem extends AdminActivityItem {
