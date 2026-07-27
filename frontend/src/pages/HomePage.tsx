@@ -14,6 +14,7 @@ import { DataLoadAlert } from '../components/DataLoadAlert';
 import type { Campaign, CategorySummary, PlatformStats } from '../types/campaign';
 import { CATEGORY_ICON_BY_NAME } from '../lib/categoryIcons';
 import { api } from '../lib/api';
+import { toUserFriendlyError } from '../lib/userFriendlyError';
 import { useAuth } from '../context/AuthContext';
 import { BRAND_NAME } from '../lib/brand';
 
@@ -60,7 +61,9 @@ export function HomePage() {
       setLoadState('ready');
     } catch (err) {
       console.error('Failed to load home page data:', err);
-      setErrorMessage(err instanceof Error ? err.message : 'Something went wrong');
+      setErrorMessage(
+        toUserFriendlyError(err, 'We could not load the page. Please check your connection and try again.')
+      );
       setLoadState('error');
       setCampaigns([]);
       setCategories([]);

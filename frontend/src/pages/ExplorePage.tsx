@@ -5,6 +5,7 @@ import type { Campaign, Category, CategorySummary } from '../types/campaign';
 import { CampaignCard } from '../components/CampaignCard';
 import { DataLoadAlert } from '../components/DataLoadAlert';
 import { api } from '../lib/api';
+import { toUserFriendlyError } from '../lib/userFriendlyError';
 
 type SortOption = 'trending' | 'newest' | 'funded';
 
@@ -43,7 +44,9 @@ export function ExplorePage() {
       setLoadState('ready');
     } catch (err) {
       console.error('Failed to load explore page data:', err);
-      setErrorMessage(err instanceof Error ? err.message : 'Something went wrong');
+      setErrorMessage(
+        toUserFriendlyError(err, 'We could not load campaigns. Please check your connection and try again.')
+      );
       setLoadState('error');
       setCampaigns([]);
       setCategories([]);

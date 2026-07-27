@@ -21,6 +21,7 @@ import type {
 import type { CampaignExtensionRequestSummary } from '../types/campaign';
 import type { PayoutMethodType, PayoutDetails, UserPayoutMethod } from '../types/payout';
 import type { User } from '../types/user';
+import { toUserFriendlyError } from './userFriendlyError';
 
 type CampaignSortOption = 'trending' | 'newest' | 'funded';
 
@@ -110,15 +111,24 @@ async function request<T>(path: string, init?: RequestInit) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...defaultFetchInit,
-    ...init,
-    headers
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...defaultFetchInit,
+      ...init,
+      headers
+    });
+  } catch (err) {
+    throw new Error(toUserFriendlyError(err));
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Request failed with status ${response.status}`);
+    const raw =
+      typeof errorData.message === 'string' && errorData.message.trim()
+        ? errorData.message
+        : `Request failed with status ${response.status}`;
+    throw new Error(toUserFriendlyError(new Error(raw)));
   }
 
   return response.json() as Promise<T>;
@@ -127,15 +137,24 @@ async function request<T>(path: string, init?: RequestInit) {
 async function requestBlob(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...defaultFetchInit,
-    ...init,
-    headers
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...defaultFetchInit,
+      ...init,
+      headers
+    });
+  } catch (err) {
+    throw new Error(toUserFriendlyError(err));
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Request failed with status ${response.status}`);
+    const raw =
+      typeof errorData.message === 'string' && errorData.message.trim()
+        ? errorData.message
+        : `Request failed with status ${response.status}`;
+    throw new Error(toUserFriendlyError(new Error(raw)));
   }
 
   return response.blob();

@@ -9,6 +9,7 @@ import { DonateModal } from '../components/DonateModal';
 import { Avatar } from '../components/Avatar';
 import { RouteLoader } from '../components/RouteLoader';
 import { DataLoadAlert } from '../components/DataLoadAlert';
+import { toUserFriendlyError } from '../lib/userFriendlyError';
 import type { Campaign } from '../types/campaign';
 import { mediaUrl } from '../lib/mediaUrl';
 import { api } from '../lib/api';
@@ -34,11 +35,10 @@ export function CampaignDetailPage() {
       setLoadState('ready');
     } catch (err) {
       console.error(`Failed to load campaign ${slug}:`, err);
-      const msg = err instanceof Error ? err.message : '';
+      const msg = toUserFriendlyError(err, 'We could not load this campaign. Please try again.');
       const isNotFound =
-        msg.includes('Campaign not found') ||
-        msg.includes('status 404') ||
-        msg.toLowerCase().includes('not found');
+        msg.toLowerCase().includes('not found') ||
+        (err instanceof Error && /status 404/i.test(err.message));
       if (isNotFound) {
         setLoadState('notfound');
         setCampaign(null);

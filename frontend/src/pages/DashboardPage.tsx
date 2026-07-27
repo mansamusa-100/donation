@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
+import { toUserFriendlyError } from '../lib/userFriendlyError';
 import { mediaUrl } from '../lib/mediaUrl';
 import { DataLoadAlert } from '../components/DataLoadAlert';
 import { PayoutMethodsPanel } from '../components/PayoutMethodsPanel';
@@ -110,7 +111,9 @@ export function DashboardPage() {
       setLoadState('ready');
     } catch (err) {
       console.error('Dashboard load failed:', err);
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to load dashboard');
+      setErrorMessage(
+        toUserFriendlyError(err, 'We could not load your dashboard. Please check your connection and try again.')
+      );
       setLoadState('error');
       setData(null);
     }

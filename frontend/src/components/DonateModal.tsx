@@ -204,7 +204,7 @@ export function DonateModal({
       setError(
         err instanceof Error
           ? err.message
-          : 'Could not start Wave checkout. Is WAVE_API_KEY or DPay configured?'
+          : 'Could not start Wave checkout. Please try again or choose another payment method.'
       );
       setIsProcessing(false);
     }
