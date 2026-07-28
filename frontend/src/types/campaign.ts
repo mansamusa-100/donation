@@ -1,4 +1,5 @@
 import type { WithdrawalPayoutInfo } from './payout';
+import type { BankTransferIntentRow } from './bank';
 
 export type Category =
   | 'Medical'
@@ -152,6 +153,8 @@ export interface CreatorDashboardOverview {
   recentDonations: CreatorReceivedDonation[];
   /** Donations you made while signed in (non-anonymous); linked via userId. */
   donationsMade: CreatorReceivedDonation[];
+  /** Bank transfers you started (by account or matching email). */
+  bankTransfers: BankTransferIntentRow[];
   withdrawalRequests: CreatorWithdrawalRequest[];
   totals: {
     totalRaised: number;

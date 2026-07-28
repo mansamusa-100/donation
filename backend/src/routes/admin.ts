@@ -1473,9 +1473,9 @@ adminRouter.post(
       actorId: req.userId ?? null
     });
 
-    if (updated.user?.email) {
+    if (updated.donorEmail || updated.user?.email) {
       void sendBankTransferRejectedEmail({
-        to: updated.user.email,
+        to: (updated.donorEmail || updated.user?.email)!,
         donorName: updated.donorName,
         campaignTitle: updated.campaign.title,
         clientReference: updated.clientReference,

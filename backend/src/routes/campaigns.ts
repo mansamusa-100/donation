@@ -36,6 +36,9 @@ import {
 } from '../lib/campaignLifecycle.js';
 import { serializeCampaignWithLifecycle } from '../lib/serializeCampaignWithLifecycle.js';
 import { serializeWithdrawalPayout } from '../lib/payoutMethods.js';
+import { expireStaleBankTransferIntents } from '../lib/expireBankTransfers.js';
+import { serializeBankTransferIntent } from '../lib/bankTransferSerialize.js';
+import { serializePlatformBankAccount } from '../lib/platformBankAccountSerialize.js';
 
 const campaignQuerySchema = z.object({
   search: z.string().trim().optional(),
@@ -260,6 +263,29 @@ campaignsRouter.get(
       }
     });
 
+    const me = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true }
+    });
+    const emailLower = me?.email?.toLowerCase() ?? '';
+
+    await expireStaleBankTransferIntents();
+
+    const bankTransferRows = await prisma.bankTransferIntent.findMany({
+      where: {
+        OR: [
+          { userId },
+          ...(emailLower ? [{ donorEmail: { equals: emailLower, mode: 'insensitive' as const } }] : [])
+        ]
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      include: {
+        campaign: { select: { title: true, slug: true } },
+        platformBankAccount: true
+      }
+    });
+
     const pendingExtensions = await prisma.campaignExtensionRequest.findMany({
       where: {
         campaignId: { in: campaigns.map((c) => c.id) },
@@ -316,6 +342,12 @@ campaignsRouter.get(
         timeAgo: serializeDonation(d).timeAgo,
         campaignTitle: d.campaign.title,
         campaignSlug: d.campaign.slug
+      })),
+      bankTransfers: bankTransferRows.map((row) => ({
+        ...serializeBankTransferIntent(row),
+        platformBankAccount: row.platformBankAccount
+          ? serializePlatformBankAccount(row.platformBankAccount)
+          : null
       })),
       totals
     });

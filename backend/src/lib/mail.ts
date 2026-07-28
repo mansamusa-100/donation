@@ -276,7 +276,8 @@ export async function sendBankTransferPendingEmail(params: {
   expiresAt: Date;
   platformBankAccount: PlatformBankAccountEmail;
 }): Promise<void> {
-  const statusUrl = `${clientBaseUrl()}/payment/bank/pending?ref=${encodeURIComponent(params.clientReference)}`;
+  const statusUrl = `${clientBaseUrl()}/track-bank-transfer?ref=${encodeURIComponent(params.clientReference)}`;
+  const pendingUrl = `${clientBaseUrl()}/payment/bank/pending?ref=${encodeURIComponent(params.clientReference)}`;
   const campaignUrl = `${clientBaseUrl()}/campaign/${params.campaignSlug}`;
   const expires = params.expiresAt.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
   const subject = `[BarakahFund] Bank transfer instructions — ${params.clientReference}`;
@@ -296,7 +297,8 @@ export async function sendBankTransferPendingEmail(params: {
     '',
     'Your donation is not counted on the campaign until our team confirms the payment. The amount we credit may differ if you sent a different amount — we use what we receive.',
     '',
-    `Track status: ${statusUrl}`,
+    `Track your transfer status anytime: ${statusUrl}`,
+    `Payment instructions: ${pendingUrl}`,
     `Campaign: ${campaignUrl}`,
     '',
     '— BarakahFund'
@@ -369,6 +371,7 @@ export async function sendBankTransferRejectedEmail(params: {
   clientReference: string;
   adminNote?: string | null;
 }): Promise<void> {
+  const statusUrl = `${clientBaseUrl()}/track-bank-transfer?ref=${encodeURIComponent(params.clientReference)}`;
   const subject = `[BarakahFund] Bank transfer not confirmed — ${params.clientReference}`;
   const text = [
     `Hi ${params.donorName},`,
@@ -376,6 +379,7 @@ export async function sendBankTransferRejectedEmail(params: {
     `We could not confirm your bank transfer (${params.clientReference}) for "${params.campaignTitle}".`,
     params.adminNote?.trim() ? `Note from our team: ${params.adminNote.trim()}` : '',
     '',
+    `View status: ${statusUrl}`,
     'If you believe this is an error, reply to this email or contact support with your reference.',
     '',
     '— BarakahFund'
@@ -386,6 +390,43 @@ export async function sendBankTransferRejectedEmail(params: {
     await sendEmail({ to: params.to, subject, text });
   } catch (err) {
     console.error('[mail] sendBankTransferRejectedEmail', err);
+  }
+}
+
+export async function sendBankTransferConfirmedEmail(params: {
+  to: string;
+  donorName: string;
+  campaignTitle: string;
+  campaignSlug: string;
+  clientReference: string;
+  confirmedAmount: number;
+  platformTipAmount: number;
+}): Promise<void> {
+  const statusUrl = `${clientBaseUrl()}/track-bank-transfer?ref=${encodeURIComponent(params.clientReference)}`;
+  const campaignUrl = `${clientBaseUrl()}/campaign/${params.campaignSlug}`;
+  const subject = `[BarakahFund] Bank transfer confirmed — ${params.clientReference}`;
+  const text = [
+    `Hi ${params.donorName},`,
+    '',
+    `Great news — we confirmed your bank transfer (${params.clientReference}) for "${params.campaignTitle}".`,
+    `Amount credited to the campaign: ${formatGmd(params.confirmedAmount)}`,
+    params.platformTipAmount > 0
+      ? `Platform tip recorded: ${formatGmd(params.platformTipAmount)}`
+      : '',
+    '',
+    `View status: ${statusUrl}`,
+    `Campaign: ${campaignUrl}`,
+    '',
+    'Thank you for your support.',
+    '',
+    '— BarakahFund'
+  ]
+    .filter(Boolean)
+    .join('\n');
+  try {
+    await sendEmail({ to: params.to, subject, text });
+  } catch (err) {
+    console.error('[mail] sendBankTransferConfirmedEmail', err);
   }
 }
 

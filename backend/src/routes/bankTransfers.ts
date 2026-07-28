@@ -21,7 +21,9 @@ import {
 export const bankTransfersRouter = Router();
 
 const initiateSchema = donationCheckoutBodySchema.extend({
-  platformBankAccountId: z.string().min(1)
+  platformBankAccountId: z.string().min(1),
+  /** Required for guests so we can email transfer status updates. */
+  donorEmail: z.string().email().optional()
 });
 
 async function resolveDonorDisplayName(
@@ -87,6 +89,25 @@ bankTransfersRouter.post(
     }
 
     const donorDisplayName = await resolveDonorDisplayName(body, req.userId);
+
+    let donorEmail: string | null = body.donorEmail?.trim().toLowerCase() || null;
+    if (req.userId) {
+      const account = await prisma.user.findUnique({
+        where: { id: req.userId },
+        select: { email: true, isActive: true }
+      });
+      if (!account?.isActive) {
+        res.status(401).json({ message: 'Account is inactive' });
+        return;
+      }
+      donorEmail = account.email.toLowerCase();
+    } else if (!donorEmail) {
+      res.status(400).json({
+        message: 'Please enter your email so we can notify you when your bank transfer is confirmed.'
+      });
+      return;
+    }
+
     const clientReference = await generateUniqueBankTransferReference();
     const expiresAt = bankTransferExpiresAt();
 
@@ -100,6 +121,7 @@ bankTransfersRouter.post(
         platformTipAmount: body.platformTipAmount ?? 0,
         currency: body.currency,
         donorName: donorDisplayName,
+        donorEmail,
         message: body.message?.trim() || null,
         isAnonymous: body.isAnonymous,
         avatarUrl: body.avatarUrl,
@@ -112,27 +134,24 @@ bankTransfersRouter.post(
       }
     });
 
-    const donorEmail = intent.user?.email;
-    if (donorEmail) {
-      void sendBankTransferPendingEmail({
-        to: donorEmail,
-        donorName: intent.donorName,
-        campaignTitle: intent.campaign.title,
-        campaignSlug: intent.campaign.slug,
-        clientReference: intent.clientReference,
-        declaredAmount: intent.declaredAmount,
-        platformTipAmount: intent.platformTipAmount,
-        expiresAt: intent.expiresAt,
-        platformBankAccount: bankAccount
-      });
-    }
+    void sendBankTransferPendingEmail({
+      to: donorEmail,
+      donorName: intent.donorName,
+      campaignTitle: intent.campaign.title,
+      campaignSlug: intent.campaign.slug,
+      clientReference: intent.clientReference,
+      declaredAmount: intent.declaredAmount,
+      platformTipAmount: intent.platformTipAmount,
+      expiresAt: intent.expiresAt,
+      platformBankAccount: bankAccount
+    });
 
     void notifyAdminsBankTransferPending({
       clientReference: intent.clientReference,
       campaignTitle: intent.campaign.title,
       campaignSlug: intent.campaign.slug,
       donorName: intent.donorName,
-      donorEmail: donorEmail ?? null,
+      donorEmail,
       declaredAmount: intent.declaredAmount,
       platformTipAmount: intent.platformTipAmount,
       expiresAt: intent.expiresAt,
@@ -152,7 +171,8 @@ bankTransfersRouter.post(
         referenceLabel:
           'Put this reference in your bank transfer remarks / narration exactly as shown',
         expiryDays: 5
-      }
+      },
+      trackUrl: `/track-bank-transfer?ref=${encodeURIComponent(intent.clientReference)}`
     });
   })
 );
@@ -178,6 +198,8 @@ bankTransfersRouter.get(
 
     res.json({
       ...serializeBankTransferIntent(intent),
+      // Do not expose contact email on the public status endpoint.
+      donorEmail: null,
       platformBankAccount: intent.platformBankAccount
         ? serializePlatformBankAccount(intent.platformBankAccount)
         : null

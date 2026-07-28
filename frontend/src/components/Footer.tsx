@@ -74,6 +74,11 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link to="/track-bank-transfer" className="hover:text-brand-400 transition-colors">
+                  Track bank transfer
+                </Link>
+              </li>
+              <li>
                 <Link to="/about" className="hover:text-brand-400 transition-colors">
                   About Us
                 </Link>

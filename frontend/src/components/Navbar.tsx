@@ -23,6 +23,10 @@ export function Navbar() {
       path: '/#how-it-works'
     },
     {
+      name: 'Track transfer',
+      path: '/track-bank-transfer'
+    },
+    {
       name: 'About Us',
       path: '/about'
     }

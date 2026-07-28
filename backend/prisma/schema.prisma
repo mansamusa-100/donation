@@ -222,6 +222,8 @@ model BankTransferIntent {
   platformTipAmount     Float              @default(0)
   currency              Currency           @default(GMD)
   donorName             String
+  /// Contact email for status updates (required for guests; copied from account when signed in).
+  donorEmail            String?
   message               String?
   isAnonymous           Boolean            @default(false)
   avatarUrl             String?

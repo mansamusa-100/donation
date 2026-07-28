@@ -8,6 +8,7 @@ import {
   ArrowRightIcon,
   HeartIcon,
   BanknoteIcon,
+  Building2,
   CheckCircle2Icon,
   PartyPopperIcon,
   XIcon
@@ -21,6 +22,7 @@ import { PayoutMethodsPanel } from '../components/PayoutMethodsPanel';
 import { ProfileAvatarEditor } from '../components/ProfileAvatarEditor';
 import { CloseAccountPanel } from '../components/CloseAccountPanel';
 import type { UserPayoutMethod } from '../types/payout';
+import type { BankTransferStatus } from '../types/bank';
 import type {
   Campaign,
   CampaignStatus,
@@ -28,6 +30,21 @@ import type {
   CreatorWithdrawalRequest,
   WithdrawalRequestStatus
 } from '../types/campaign';
+
+function bankTransferStatusClass(status: BankTransferStatus) {
+  switch (status) {
+    case 'Pending':
+      return 'bg-amber-100 text-amber-900';
+    case 'Confirmed':
+      return 'bg-emerald-100 text-emerald-900';
+    case 'Rejected':
+      return 'bg-red-100 text-red-900';
+    case 'Expired':
+      return 'bg-surface-100 text-surface-700';
+    default:
+      return 'bg-surface-100 text-surface-700';
+  }
+}
 
 function withdrawalStatusClass(status: WithdrawalRequestStatus) {
   switch (status) {
@@ -210,6 +227,7 @@ export function DashboardPage() {
   const withdrawals = data?.withdrawalRequests ?? [];
   const recent = data?.recentDonations ?? [];
   const made = data?.donationsMade ?? [];
+  const bankTransfers = data?.bankTransfers ?? [];
   const totals = {
     totalRaised: 0,
     totalDonors: 0,
@@ -472,6 +490,73 @@ export function DashboardPage() {
                         </div>
                       ))}
                     </div>
+                  )}
+                </div>
+
+                <h2 className="text-xl font-display font-bold text-surface-900">Your bank transfers</h2>
+                <p className="text-xs text-surface-500 -mt-4">
+                  Track bank donations you started. Status updates when our team confirms your payment.
+                </p>
+                <div className="bg-white rounded-2xl shadow-sm border border-surface-200 p-6">
+                  {bankTransfers.length === 0 ? (
+                    <p className="text-sm text-surface-500">
+                      No bank transfers yet.{' '}
+                      <Link to="/track-bank-transfer" className="font-semibold text-brand-700 hover:underline">
+                        Track a transfer by reference
+                      </Link>
+                    </p>
+                  ) : (
+                    <ul className="divide-y divide-surface-100 border border-surface-100 rounded-xl overflow-hidden">
+                      {bankTransfers.map((t) => (
+                        <li
+                          key={t.id}
+                          className="px-4 py-3 flex flex-wrap items-center justify-between gap-3 bg-surface-50/50">
+                          <div className="min-w-0 flex items-start gap-3">
+                            <div className="p-2 bg-brand-50 text-brand-700 rounded-lg shrink-0">
+                              <Building2 className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-surface-900 text-sm">
+                                D{(t.confirmedAmount ?? t.declaredAmount).toLocaleString()}
+                                {t.campaignTitle ? (
+                                  <span className="text-surface-500 font-normal"> · {t.campaignTitle}</span>
+                                ) : null}
+                              </p>
+                              <p className="text-xs text-surface-500 mt-0.5">
+                                <span className="font-mono font-semibold text-surface-700">{t.clientReference}</span>
+                                {' · '}
+                                {new Date(t.createdAt).toLocaleString()}
+                              </p>
+                              <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-xs">
+                                <Link
+                                  to={`/track-bank-transfer?ref=${encodeURIComponent(t.clientReference)}`}
+                                  className="font-semibold text-brand-700 hover:underline">
+                                  Track status
+                                </Link>
+                                {t.status === 'Pending' ? (
+                                  <Link
+                                    to={`/payment/bank/pending?ref=${encodeURIComponent(t.clientReference)}`}
+                                    className="font-semibold text-surface-700 hover:underline">
+                                    View instructions
+                                  </Link>
+                                ) : null}
+                                {t.campaignSlug ? (
+                                  <Link
+                                    to={`/campaign/${t.campaignSlug}`}
+                                    className="font-semibold text-surface-700 hover:underline">
+                                    Campaign
+                                  </Link>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                          <span
+                            className={`text-xs font-bold px-2.5 py-1 rounded-md shrink-0 ${bankTransferStatusClass(t.status)}`}>
+                            {t.status}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
 

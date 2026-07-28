@@ -403,6 +403,7 @@ export const api = {
     platformTipAmount?: number;
     currency?: 'GMD' | 'USD';
     donorName?: string;
+    donorEmail?: string;
     message?: string;
     isAnonymous?: boolean;
     avatarUrl?: string;

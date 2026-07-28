@@ -47,6 +47,7 @@ export function DonateModal({
   const [amount, setAmount] = useState<number | ''>('');
   const [platformTipAmount, setPlatformTipAmount] = useState(0);
   const [donorName, setDonorName] = useState('');
+  const [donorEmail, setDonorEmail] = useState('');
   const [message, setMessage] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [paymentWallet, setPaymentWallet] = useState<PaymentMethodId>('wave');
@@ -73,6 +74,13 @@ export function DonateModal({
     }
     setDonorName((prev) => (prev.trim() ? prev : user.fullName));
   }, [isOpen, isAnonymous, user?.fullName]);
+
+  useEffect(() => {
+    if (!isOpen || !user?.email) {
+      return;
+    }
+    setDonorEmail((prev) => (prev.trim() ? prev : user.email));
+  }, [isOpen, user?.email]);
 
   useEffect(() => {
     if (!isOpen || step !== 2) {
@@ -109,7 +117,7 @@ export function DonateModal({
         if (!cancelled) {
           setPlatformBankAccounts(rows);
           setSelectedBankAccountId((prev) =>
-            prev && rows.some((r) => r.id === prev) ? prev : rows[0]?.id ?? ''
+            prev && rows.some((r) => r.id === prev) ? prev : ''
           );
         }
       })
@@ -336,12 +344,21 @@ export function DonateModal({
       setError('Select a bank account to transfer to.');
       return;
     }
+    if (!user && !donorEmail.trim()) {
+      setError('Please enter your email so we can notify you when your transfer is confirmed.');
+      return;
+    }
+    if (!user && donorEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(donorEmail.trim())) {
+      setError('Please enter a valid email address.');
+      return;
+    }
     setError('');
     setIsProcessing(true);
     try {
       const res = await api.initiateBankTransfer({
         ...donatePayloadBase(),
-        platformBankAccountId: selectedBankAccountId
+        platformBankAccountId: selectedBankAccountId,
+        ...(!user && donorEmail.trim() ? { donorEmail: donorEmail.trim() } : {})
       });
       const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
       window.location.assign(
@@ -702,20 +719,62 @@ export function DonateModal({
                           Bank donations are not available yet — an admin must add an active receiving account.
                         </p>
                       ) : (
-                        <label className="block text-xs font-semibold text-surface-700">
-                          Transfer to
-                          <select
-                            value={selectedBankAccountId}
-                            onChange={(e) => setSelectedBankAccountId(e.target.value)}
-                            className="mt-1 w-full p-2 rounded-lg border-2 border-surface-200 text-sm bg-white">
-                            {platformBankAccounts.map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.label ? `${a.label} — ` : ''}
-                                {a.bankName} ({a.accountNumber})
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                        <div className="space-y-3">
+                          <label className="block text-xs font-semibold text-surface-700">
+                            Select bank
+                            <select
+                              aria-label="Select bank for transfer"
+                              value={selectedBankAccountId}
+                              onChange={(e) => setSelectedBankAccountId(e.target.value)}
+                              className="mt-1 w-full p-2.5 rounded-lg border-2 border-surface-200 text-sm bg-white">
+                              <option value="">Select a bank…</option>
+                              {platformBankAccounts.map((a) => (
+                                <option key={a.id} value={a.id}>
+                                  {a.label ? `${a.label} — ` : ''}
+                                  {a.bankName} ({a.accountNumber})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          {!user ? (
+                            <label className="block text-xs font-semibold text-surface-700">
+                              Email for status updates
+                              <input
+                                type="email"
+                                value={donorEmail}
+                                onChange={(e) => setDonorEmail(e.target.value)}
+                                placeholder="you@example.com"
+                                required
+                                className="mt-1 w-full p-2.5 rounded-lg border-2 border-surface-200 text-sm bg-white"
+                              />
+                              <span className="mt-1 block text-[11px] font-normal text-surface-500">
+                                We will email you when your transfer is confirmed or if there is a problem. Required for
+                                guests.
+                              </span>
+                            </label>
+                          ) : (
+                            <p className="text-[11px] text-surface-500">
+                              Status updates will be sent to <strong>{user.email}</strong>.
+                            </p>
+                          )}
+                          {selectedBankAccountId
+                            ? (() => {
+                                const selected = platformBankAccounts.find((a) => a.id === selectedBankAccountId);
+                                if (!selected) {
+                                  return null;
+                                }
+                                return (
+                                  <div className="rounded-lg border border-surface-200 bg-white px-3 py-2 text-xs text-surface-700 space-y-0.5">
+                                    <p className="font-semibold text-surface-900">Receiving account</p>
+                                    <p>{selected.accountName}</p>
+                                    <p>
+                                      {selected.bankName} · {selected.accountNumber}
+                                    </p>
+                                  </div>
+                                );
+                              })()
+                            : null}
+                        </div>
                       )}
                     </div>
                   </div>

@@ -51,4 +51,5 @@ export interface BankTransferInitiateResult {
     referenceLabel: string;
     expiryDays: number;
   };
+  trackUrl?: string;
 }

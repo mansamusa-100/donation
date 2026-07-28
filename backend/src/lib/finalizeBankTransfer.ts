@@ -2,11 +2,22 @@ import type { BankTransferIntent } from '@prisma/client';
 import { prisma } from './prisma.js';
 import { applyDonationToLedger, recordPlatformTip } from './processDonationLedger.js';
 import { tryFinalizeCampaignEnded } from './campaignLifecycle.js';
-import { sendDonationThankYouEmail } from './mail.js';
+import { sendBankTransferConfirmedEmail } from './mail.js';
 
 type IntentWithRelations = BankTransferIntent & {
   campaign: { title: string; slug: string };
 };
+
+function resolveNotifyEmail(intent: {
+  donorEmail: string | null;
+  user?: { email: string } | null;
+}): string | null {
+  const fromIntent = intent.donorEmail?.trim().toLowerCase();
+  if (fromIntent) {
+    return fromIntent;
+  }
+  return intent.user?.email?.trim().toLowerCase() || null;
+}
 
 export async function confirmBankTransferIntent(params: {
   intent: IntentWithRelations;
@@ -85,15 +96,17 @@ export async function sendBankTransferConfirmedEmails(
   updated: Awaited<ReturnType<typeof confirmBankTransferIntent>>['updated'],
   donationAmount: number
 ) {
-  if (updated.user?.email) {
-    void sendDonationThankYouEmail({
-      to: updated.user.email,
-      donorName: updated.donorName,
-      amount: donationAmount,
-      currency: updated.currency,
-      campaignTitle: updated.campaign.title,
-      campaignSlug: updated.campaign.slug,
-      platformTipAmount: updated.platformTipAmount
-    });
+  const to = resolveNotifyEmail(updated);
+  if (!to) {
+    return;
   }
+  void sendBankTransferConfirmedEmail({
+    to,
+    donorName: updated.donorName,
+    campaignTitle: updated.campaign.title,
+    campaignSlug: updated.campaign.slug,
+    clientReference: updated.clientReference,
+    confirmedAmount: donationAmount,
+    platformTipAmount: updated.platformTipAmount
+  });
 }

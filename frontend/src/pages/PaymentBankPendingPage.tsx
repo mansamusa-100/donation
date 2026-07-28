@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CheckCircleIcon, CopyIcon, Loader2Icon, XCircleIcon } from 'lucide-react';
 import { api } from '../lib/api';
+import { BankTransferStatusTracker } from '../components/BankTransferStatusTracker';
 import type { BankTransferIntentRow } from '../types/bank';
 
 export function PaymentBankPendingPage() {
@@ -62,8 +63,8 @@ export function PaymentBankPendingPage() {
       <div className="min-h-[60vh] flex flex-col items-center justify-center px-4 py-16 text-center max-w-md mx-auto">
         <h1 className="font-display font-bold text-xl text-surface-900 mb-2">Invalid link</h1>
         <p className="text-surface-600 text-sm mb-4">Missing bank transfer reference.</p>
-        <Link to="/explore" className="text-brand-600 font-bold hover:underline">
-          Explore campaigns
+        <Link to="/track-bank-transfer" className="text-brand-600 font-bold hover:underline">
+          Track a transfer
         </Link>
       </div>
     );
@@ -74,8 +75,8 @@ export function PaymentBankPendingPage() {
       <div className="min-h-[60vh] flex flex-col items-center justify-center px-4 py-16 text-center max-w-md mx-auto space-y-3">
         <h1 className="font-display font-bold text-xl text-surface-900">Could not load</h1>
         <p className="text-surface-600 text-sm">{loadError}</p>
-        <Link to="/explore" className="text-brand-600 font-bold hover:underline">
-          Explore campaigns
+        <Link to="/track-bank-transfer" className="text-brand-600 font-bold hover:underline">
+          Track a transfer
         </Link>
       </div>
     );
@@ -93,12 +94,13 @@ export function PaymentBankPendingPage() {
   if (intent.status === 'Confirmed') {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center px-4 py-16">
-        <div className="text-center max-w-md">
-          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <div className="text-center max-w-md space-y-4">
+          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
             <CheckCircleIcon className="w-9 h-9 text-emerald-700" />
           </div>
-          <h1 className="font-display font-bold text-2xl text-surface-900 mb-2">Thank you!</h1>
-          <p className="text-surface-600 mb-6">
+          <h1 className="font-display font-bold text-2xl text-surface-900">Thank you!</h1>
+          <BankTransferStatusTracker status={intent.status} />
+          <p className="text-surface-600">
             Your bank transfer <strong>{intent.clientReference}</strong> was confirmed
             {intent.confirmedAmount != null ? (
               <>
@@ -137,6 +139,7 @@ export function PaymentBankPendingPage() {
         <h1 className="font-display font-bold text-xl text-surface-900">
           Transfer {intent.status.toLowerCase()}
         </h1>
+        <BankTransferStatusTracker status={intent.status} />
         <p className="text-surface-600 text-sm">
           Reference <span className="font-mono font-semibold">{intent.clientReference}</span>
           {intent.adminNote ? (
@@ -146,8 +149,8 @@ export function PaymentBankPendingPage() {
             </>
           ) : null}
         </p>
-        <Link to="/explore" className="text-brand-600 font-bold hover:underline">
-          Explore campaigns
+        <Link to="/track-bank-transfer" className="text-brand-600 font-bold hover:underline">
+          Track another transfer
         </Link>
       </div>
     );
@@ -163,6 +166,8 @@ export function PaymentBankPendingPage() {
           Send funds from your bank using the details below. Put the reference in your transfer remarks exactly as
           shown. We will confirm manually — your donation is not on the campaign until then.
         </p>
+
+        <BankTransferStatusTracker status={intent.status} />
 
         <div className="rounded-2xl border border-brand-200 bg-brand-50 p-4 text-left space-y-2">
           <p className="text-xs font-semibold text-brand-900 uppercase tracking-wide">Your reference</p>
@@ -187,6 +192,10 @@ export function PaymentBankPendingPage() {
           </p>
           <p className="text-xs text-amber-800">
             Complete by {new Date(intent.expiresAt).toLocaleString()} (5 days). After that this request expires.
+          </p>
+          <p className="text-xs text-surface-600">
+            We will email you when this transfer is confirmed or if there is a problem. You can also track it anytime with
+            this reference.
           </p>
         </div>
 
@@ -216,6 +225,15 @@ export function PaymentBankPendingPage() {
           <Loader2Icon className="w-4 h-4 animate-spin text-brand-600" />
           Waiting for admin confirmation…
         </div>
+
+        <p className="text-sm text-surface-600">
+          You can leave this page and check later:{' '}
+          <Link
+            to={`/track-bank-transfer?ref=${encodeURIComponent(intent.clientReference)}`}
+            className="font-semibold text-brand-700 hover:underline">
+            Track this transfer
+          </Link>
+        </p>
 
         {intent.campaignSlug ? (
           <Link

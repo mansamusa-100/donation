@@ -28,7 +28,7 @@ export function serializeBankTransferIntent(row: IntentWithBank) {
     donationId: row.donationId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-    donorEmail: row.user?.email ?? null,
+    donorEmail: row.donorEmail ?? row.user?.email ?? null,
     platformBankAccount: row.platformBankAccount
       ? serializePlatformBankAccount(row.platformBankAccount)
       : null
