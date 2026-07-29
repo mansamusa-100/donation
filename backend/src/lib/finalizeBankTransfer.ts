@@ -3,6 +3,7 @@ import { prisma } from './prisma.js';
 import { applyDonationToLedger, recordPlatformTip } from './processDonationLedger.js';
 import { tryFinalizeCampaignEnded } from './campaignLifecycle.js';
 import { sendBankTransferConfirmedEmail } from './mail.js';
+import { lockBankTransferIntentForUpdate } from './paymentIntentLock.js';
 
 type IntentWithRelations = BankTransferIntent & {
   campaign: { title: string; slug: string };
@@ -30,6 +31,8 @@ export async function confirmBankTransferIntent(params: {
   }
 
   return prisma.$transaction(async (tx) => {
+    await lockBankTransferIntentForUpdate(tx, params.intent.id);
+
     const current = await tx.bankTransferIntent.findUnique({
       where: { id: params.intent.id }
     });
@@ -69,8 +72,8 @@ export async function confirmBankTransferIntent(params: {
       });
     }
 
-    const updated = await tx.bankTransferIntent.update({
-      where: { id: current.id },
+    const claimed = await tx.bankTransferIntent.updateMany({
+      where: { id: current.id, status: 'Pending', donationId: null },
       data: {
         status: 'Confirmed',
         confirmedAmount: params.receivedAmount,
@@ -78,7 +81,14 @@ export async function confirmBankTransferIntent(params: {
         reviewedById: params.reviewedById,
         reviewedAt: new Date(),
         adminNote: params.adminNote?.trim() || null
-      },
+      }
+    });
+    if (claimed.count !== 1) {
+      throw new Error('This bank transfer is no longer pending');
+    }
+
+    const updated = await tx.bankTransferIntent.findUniqueOrThrow({
+      where: { id: current.id },
       include: {
         campaign: { select: { title: true, slug: true } },
         platformBankAccount: true,

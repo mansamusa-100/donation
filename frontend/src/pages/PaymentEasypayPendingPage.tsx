@@ -40,7 +40,6 @@ export function PaymentEasypayPendingPage() {
   }, [ref]);
 
   const qrPayload = session?.qrPayload?.trim() || null;
-  const paymentHtml = session?.paymentHtml?.trim() || null;
   const launchUrl = session?.launchUrl ?? null;
 
   useEffect(() => {
@@ -221,22 +220,10 @@ export function PaymentEasypayPendingPage() {
         <p className="text-surface-600 text-sm">
           {mobile
             ? 'Open your wallet app to approve. After you pay, keep this page open — we will confirm as soon as DPay notifies us.'
-            : 'On desktop you can use the secure checkout below or scan the QR code with your wallet app. Keep this tab open until you see the thank-you message.'}
+            : 'On desktop, open your wallet with the button below or scan the QR code. Keep this tab open until you see the thank-you message.'}
         </p>
 
-        {!mobile && paymentHtml ? (
-          <div className="rounded-2xl border border-surface-200 bg-white overflow-hidden text-left shadow-sm">
-            <p className="text-xs font-semibold text-surface-500 px-3 pt-3 pb-1">DPay checkout</p>
-            <iframe
-              title="DPay wallet checkout"
-              srcDoc={paymentHtml}
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-              className="w-full min-h-[420px] border-0 bg-white"
-            />
-          </div>
-        ) : null}
-
-        {!mobile && !paymentHtml && qrDataUrl ? (
+        {!mobile && qrDataUrl ? (
           <div className="flex flex-col items-center gap-2 rounded-2xl border border-surface-200 bg-surface-50 py-6 px-4">
             <QrCodeIcon className="w-8 h-8 text-surface-600" aria-hidden />
             <p className="text-sm font-semibold text-surface-800">Scan with your wallet app</p>
@@ -275,10 +262,9 @@ export function PaymentEasypayPendingPage() {
           </button>
         ) : null}
 
-        {!mobile && !paymentHtml && !qrDataUrl && launchUrl ? (
+        {!mobile && !qrDataUrl && launchUrl ? (
           <p className="text-xs text-surface-500">
-            No QR or embedded checkout was returned for this order — use the button above to open your wallet, or donate
-            from your phone.
+            No QR was returned for this order — use the button above to open your wallet, or donate from your phone.
           </p>
         ) : null}
 

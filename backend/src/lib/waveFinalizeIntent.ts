@@ -5,6 +5,7 @@ import { waveAmountMatchesExpected } from './waveCheckout.js';
 import { serializeCampaign } from './serializers.js';
 import { tryFinalizeCampaignEnded } from './campaignLifecycle.js';
 import { sendDonationThankYouEmail } from './mail.js';
+import { lockWavePaymentIntentForUpdate } from './paymentIntentLock.js';
 
 export type WaveCheckoutSnapshot = {
   amount: string;
@@ -75,6 +76,8 @@ export async function finalizeWaveIntentFromCheckoutSession(
   }
 
   const txResult = await prisma.$transaction(async (tx) => {
+    await lockWavePaymentIntentForUpdate(tx, intent.id);
+
     const locked = await tx.wavePaymentIntent.findUnique({
       where: { id: intent.id }
     });
@@ -100,10 +103,13 @@ export async function finalizeWaveIntentFromCheckoutSession(
       avatarUrl: undefined
     });
 
-    await tx.wavePaymentIntent.update({
-      where: { id: intent.id },
+    const claimed = await tx.wavePaymentIntent.updateMany({
+      where: { id: intent.id, donationId: null },
       data: { donationId: donation.id }
     });
+    if (claimed.count !== 1) {
+      throw new Error('Failed to claim Wave payment intent (concurrent finalize)');
+    }
 
     if (intent.platformTipAmount > 0) {
       const existingTip = await tx.platformTip.findUnique({

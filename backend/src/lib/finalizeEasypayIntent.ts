@@ -7,6 +7,7 @@ import { tryFinalizeCampaignEnded } from './campaignLifecycle.js';
 import { sendDonationThankYouEmail } from './mail.js';
 import { easypayCreateOrder, EasypayPartnerApiError } from './easypayPartner.js';
 import { roundMoney } from './money.js';
+import { lockEasypayPaymentIntentForUpdate } from './paymentIntentLock.js';
 
 /** Parse a reported GMD total in bututs/cents so decimal amounts compare exactly. */
 function parseGmdTotalCents(value: unknown): number | null {
@@ -41,6 +42,20 @@ export function isEasypayOrderPaidStatus(status: string): boolean {
   );
 }
 
+export class EasypayAmountMismatchError extends Error {
+  readonly expectedGrossCents: number;
+  readonly gotCents: number;
+
+  constructor(expectedGrossCents: number, gotCents: number) {
+    super(
+      `Easypay amount mismatch: expected ${expectedGrossCents} cents, got ${gotCents} cents`
+    );
+    this.name = 'EasypayAmountMismatchError';
+    this.expectedGrossCents = expectedGrossCents;
+    this.gotCents = gotCents;
+  }
+}
+
 type IntentWithCampaign = EasypayPaymentIntent & { campaign: Campaign };
 
 export type EasypayStatusResult = {
@@ -53,8 +68,8 @@ export type EasypayStatusResult = {
 
 /**
  * Idempotent: records donation + tip once.
- * On `payment.completed`, trust the partner event — amount mismatches are logged but do not block
- * recording (they previously left donors stuck on the pending screen while DPay returned 200).
+ * Fails closed when the partner reports a gross amount that does not match the intent.
+ * Uses row locks so concurrent webhook + status poll cannot double-credit.
  */
 export async function finalizeEasypayIntentPaid(params: {
   intent: IntentWithCampaign;
@@ -70,23 +85,23 @@ export async function finalizeEasypayIntentPaid(params: {
   const expectedGross = Math.round((intent.amount + intent.platformTipAmount) * 100);
   const got = parseGmdTotalCents(params.grossAmountFromWebhook);
   if (got !== null && got !== expectedGross) {
-    console.warn(
-      '[easypay] amount mismatch vs intent — still finalizing because partner marked payment completed',
-      {
-        partnerExternalBookingId: intent.partnerExternalBookingId,
-        expectedGrossCents: expectedGross,
-        gotCents: got,
-        webhookPaymentId
-      }
-    );
+    console.error('[easypay] amount mismatch vs intent — refusing to finalize', {
+      partnerExternalBookingId: intent.partnerExternalBookingId,
+      expectedGrossCents: expectedGross,
+      gotCents: got,
+      webhookPaymentId
+    });
+    throw new EasypayAmountMismatchError(expectedGross, got);
   }
 
-  await prisma.$transaction(async (tx) => {
+  const recorded = await prisma.$transaction(async (tx) => {
+    await lockEasypayPaymentIntentForUpdate(tx, intent.id);
+
     const locked = await tx.easypayPaymentIntent.findUnique({
       where: { id: intent.id }
     });
-    if (locked?.donationId) {
-      return null;
+    if (!locked || locked.donationId) {
+      return false;
     }
 
     const donation = await applyDonationToLedger(tx, {
@@ -101,10 +116,13 @@ export async function finalizeEasypayIntentPaid(params: {
       avatarUrl: intent.avatarUrl ?? undefined
     });
 
-    await tx.easypayPaymentIntent.update({
-      where: { id: intent.id },
+    const claimed = await tx.easypayPaymentIntent.updateMany({
+      where: { id: intent.id, donationId: null },
       data: { donationId: donation.id }
     });
+    if (claimed.count !== 1) {
+      throw new Error('Failed to claim Easypay payment intent (concurrent finalize)');
+    }
 
     if (intent.platformTipAmount > 0) {
       const existingTip = await tx.platformTip.findUnique({
@@ -123,7 +141,12 @@ export async function finalizeEasypayIntentPaid(params: {
     }
 
     await tryFinalizeCampaignEnded(tx, intent.campaignId);
+    return true;
   });
+
+  if (!recorded) {
+    return { recorded: false };
+  }
 
   if (intent.userId) {
     void (async () => {
@@ -210,6 +233,7 @@ export async function reconcileEasypayIntentIfPaid(
   const chargeTotal = roundMoney(intent.amount + intent.platformTipAmount);
   let shouldFinalize = false;
   let reconcilePaymentId = `epay-reconcile:${intent.partnerExternalBookingId}`;
+  let orderAmount: unknown;
 
   try {
     const order = await easypayCreateOrder({
@@ -220,6 +244,7 @@ export async function reconcileEasypayIntentIfPaid(
     if (isEasypayOrderPaidStatus(order.status)) {
       shouldFinalize = true;
       reconcilePaymentId = `epay-reconcile:${intent.partnerExternalBookingId}:${order.id}`;
+      orderAmount = order.total;
       console.info('[easypay] reconcile: partner order looks paid', {
         partnerExternalBookingId: intent.partnerExternalBookingId,
         orderId: order.id,
@@ -263,11 +288,21 @@ export async function reconcileEasypayIntentIfPaid(
         throw e;
       }
     }
-    await finalizeEasypayIntentPaid({
-      intent,
-      webhookPaymentId: reconcilePaymentId,
-      grossAmountFromWebhook: undefined
-    });
+    try {
+      await finalizeEasypayIntentPaid({
+        intent,
+        webhookPaymentId: reconcilePaymentId,
+        // Reconcile without a partner amount uses intent totals (undefined skips mismatch check).
+        // When order.amount is present it is validated fail-closed.
+        grossAmountFromWebhook: orderAmount
+      });
+    } catch (err) {
+      if (err instanceof EasypayAmountMismatchError) {
+        console.error('[easypay] reconcile refused amount mismatch', err.message);
+      } else {
+        throw err;
+      }
+    }
   }
 
   return loadEasypayIntentForStatus(partnerExternalBookingId);

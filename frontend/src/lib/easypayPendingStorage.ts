@@ -3,7 +3,6 @@ const PREFIX = 'bf_easypay_launch:';
 export type EasypayPendingWalletSession = {
   launchUrl: string;
   qrPayload?: string;
-  paymentHtml?: string | null;
 };
 
 export function setEasypayPendingWalletSession(
@@ -13,10 +12,7 @@ export function setEasypayPendingWalletSession(
   try {
     const payload: EasypayPendingWalletSession = {
       launchUrl: session.launchUrl,
-      ...(session.qrPayload != null && session.qrPayload !== '' ? { qrPayload: session.qrPayload } : {}),
-      ...(session.paymentHtml != null && session.paymentHtml !== ''
-        ? { paymentHtml: session.paymentHtml }
-        : {})
+      ...(session.qrPayload != null && session.qrPayload !== '' ? { qrPayload: session.qrPayload } : {})
     };
     sessionStorage.setItem(PREFIX + partnerExternalBookingId, JSON.stringify(payload));
   } catch {
@@ -37,15 +33,13 @@ export function getEasypayPendingWalletSession(
       return null;
     }
     if (raw.startsWith('{')) {
-      const parsed = JSON.parse(raw) as Partial<EasypayPendingWalletSession>;
+      const parsed = JSON.parse(raw) as Partial<EasypayPendingWalletSession> & {
+        paymentHtml?: unknown;
+      };
       if (parsed && typeof parsed.launchUrl === 'string') {
         return {
           launchUrl: parsed.launchUrl,
-          qrPayload: typeof parsed.qrPayload === 'string' ? parsed.qrPayload : undefined,
-          paymentHtml:
-            typeof parsed.paymentHtml === 'string' && parsed.paymentHtml.length > 0
-              ? parsed.paymentHtml
-              : null
+          qrPayload: typeof parsed.qrPayload === 'string' ? parsed.qrPayload : undefined
         };
       }
       return null;

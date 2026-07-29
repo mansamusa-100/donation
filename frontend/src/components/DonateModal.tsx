@@ -196,8 +196,7 @@ export function DonateModal({
         }
         setEasypayPendingWalletSession(res.partnerExternalBookingId, {
           launchUrl: res.launchUrl,
-          qrPayload: res.qrPayload,
-          paymentHtml: res.paymentHtml ?? undefined
+          qrPayload: res.qrPayload
         });
         const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
         window.location.assign(
@@ -237,8 +236,7 @@ export function DonateModal({
       }
       setEasypayPendingWalletSession(res.partnerExternalBookingId, {
         launchUrl: res.launchUrl,
-        qrPayload: res.qrPayload,
-        paymentHtml: res.paymentHtml ?? undefined
+        qrPayload: res.qrPayload
       });
       const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
       window.location.assign(

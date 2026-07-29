@@ -8,7 +8,7 @@ import {
   mergeEasypayPartnerWebhookPayload,
   applyEasypaySnakeCaseAliases
 } from '../lib/easypayPartnerPayload.js';
-import { finalizeEasypayIntentPaid } from '../lib/finalizeEasypayIntent.js';
+import { finalizeEasypayIntentPaid, EasypayAmountMismatchError } from '../lib/finalizeEasypayIntent.js';
 
 function verifyEasypayPartnerWebhook(
   rawBody: string,
@@ -122,6 +122,17 @@ export async function handleEasypayPartnerWebhook(req: Request, res: Response): 
       grossAmountFromWebhook: amount
     });
   } catch (err) {
+    if (err instanceof EasypayAmountMismatchError) {
+      console.error('[easypay webhook] amount mismatch — not recording donation', {
+        partnerExternalBookingId,
+        paymentId,
+        expectedGrossCents: err.expectedGrossCents,
+        gotCents: err.gotCents
+      });
+      // ACK so partner stops retrying; do not write a completed receipt that would block ops replay after fix.
+      res.status(200).json({ ok: false, amountMismatch: true });
+      return;
+    }
     console.error('[easypay webhook] finalize failed', {
       partnerExternalBookingId,
       paymentId,

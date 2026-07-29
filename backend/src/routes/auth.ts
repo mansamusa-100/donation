@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { OAuth2Client } from 'google-auth-library';
@@ -10,6 +9,7 @@ import {
   hashPassword,
   comparePassword,
   authenticate,
+  optionalAuthenticate,
   AuthRequest
 } from '../lib/auth.js';
 import { setAuthCookie, clearAuthCookie } from '../lib/authCookies.js';
@@ -24,6 +24,11 @@ import {
   loginPasswordSchema,
   newPasswordSchema
 } from '../lib/passwordPolicy.js';
+import { revokeUserSessions } from '../lib/revokeSessions.js';
+import {
+  createPasswordResetToken,
+  hashPasswordResetToken
+} from '../lib/passwordResetToken.js';
 
 const authRouter = Router();
 
@@ -186,12 +191,12 @@ authRouter.post(
     });
 
     if (user?.isActive) {
-      const token = randomBytes(32).toString('base64url');
+      const token = createPasswordResetToken();
       const expires = new Date(Date.now() + 60 * 60 * 1000);
       await prisma.user.update({
         where: { id: user.id },
         data: {
-          passwordResetToken: token,
+          passwordResetToken: hashPasswordResetToken(token),
           passwordResetExpires: expires
         }
       });
@@ -218,7 +223,7 @@ authRouter.post(
 
     const user = await prisma.user.findFirst({
       where: {
-        passwordResetToken: body.token,
+        passwordResetToken: hashPasswordResetToken(body.token),
         passwordResetExpires: { gt: new Date() }
       }
     });
@@ -295,7 +300,11 @@ authRouter.post(
 
 authRouter.post(
   '/logout',
-  asyncHandler(async (_req, res) => {
+  optionalAuthenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    if (req.userId) {
+      await revokeUserSessions(req.userId);
+    }
     clearAuthCookie(res);
     res.json({ message: 'Signed out' });
   })
