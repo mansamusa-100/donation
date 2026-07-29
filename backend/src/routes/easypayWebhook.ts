@@ -33,6 +33,20 @@ const webhookBodySchema = z.object({
   reason: z.string().optional()
 });
 
+function normalizePartnerEvent(event: string): string {
+  return event.trim().toLowerCase().replace(/[\s-]+/g, '.');
+}
+
+function isPaymentCompletedEvent(event: string): boolean {
+  const n = normalizePartnerEvent(event);
+  return (
+    n === 'payment.completed' ||
+    n === 'payment.complete' ||
+    n === 'payment.succeeded' ||
+    n === 'payment.success'
+  );
+}
+
 /**
  * POST with `express.raw({ type: 'application/json' })` — body must be raw UTF-8 bytes Easypay signed.
  */
@@ -63,48 +77,69 @@ export async function handleEasypayPartnerWebhook(req: Request, res: Response): 
   applyEasypaySnakeCaseAliases(merged);
   const body = webhookBodySchema.safeParse(merged);
   if (!body.success) {
+    console.warn('[easypay webhook] invalid payload shape', body.error.flatten());
     res.status(400).json({ message: 'Invalid payload' });
     return;
   }
 
-  const { event, paymentId, partnerExternalBookingId, amount } = body.data;
+  const { event, paymentId, partnerExternalBookingId, amount, paymentStatus } = body.data;
 
-  if (event === 'payment.completed') {
-    if (!paymentId || !partnerExternalBookingId) {
-      res.status(400).json({ message: 'Missing paymentId or partnerExternalBookingId' });
-      return;
-    }
+  if (!isPaymentCompletedEvent(event)) {
+    // Still ACK cancelled/failed so DPay stops retrying.
+    res.status(200).json({ ok: true, ignored: true, event });
+    return;
+  }
 
-    try {
-      await prisma.easypayWebhookReceipt.create({
-        data: { paymentId, event }
-      });
-    } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        res.status(200).json({ ok: true, duplicate: true });
-        return;
-      }
-      throw e;
-    }
-
-    const intent = await prisma.easypayPaymentIntent.findUnique({
-      where: { partnerExternalBookingId },
-      include: { campaign: true }
+  if (!paymentId || !partnerExternalBookingId) {
+    console.warn('[easypay webhook] completed event missing ids', {
+      event,
+      paymentId,
+      partnerExternalBookingId,
+      paymentStatus
     });
+    res.status(400).json({ message: 'Missing paymentId or partnerExternalBookingId' });
+    return;
+  }
 
-    if (!intent) {
-      console.warn('[easypay webhook] unknown partnerExternalBookingId', partnerExternalBookingId);
-      res.status(200).json({ ok: true });
-      return;
-    }
+  const intent = await prisma.easypayPaymentIntent.findUnique({
+    where: { partnerExternalBookingId },
+    include: { campaign: true }
+  });
 
+  if (!intent) {
+    console.warn('[easypay webhook] unknown partnerExternalBookingId', partnerExternalBookingId);
+    // ACK so partner does not retry forever for orphan deliveries.
+    res.status(200).json({ ok: true, unknownBooking: true });
+    return;
+  }
+
+  // Finalize BEFORE recording the receipt. Previously we stored the receipt first; if finalize
+  // returned early (e.g. amount mismatch), DPay got 200 and never retried, while our UI stayed pending.
+  try {
     await finalizeEasypayIntentPaid({
       intent,
       webhookPaymentId: paymentId,
       grossAmountFromWebhook: amount
     });
-    res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error('[easypay webhook] finalize failed', {
+      partnerExternalBookingId,
+      paymentId,
+      err
+    });
+    // Non-2xx so DPay retries.
+    res.status(500).json({ message: 'Failed to record donation' });
     return;
+  }
+
+  try {
+    await prisma.easypayWebhookReceipt.create({
+      data: { paymentId, event: 'payment.completed' }
+    });
+  } catch (e) {
+    if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) {
+      console.error('[easypay webhook] receipt create failed after finalize', e);
+    }
   }
 
   res.status(200).json({ ok: true });

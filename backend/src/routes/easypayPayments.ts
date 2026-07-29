@@ -19,7 +19,7 @@ import {
   easypayApsCompleteForPlatform,
   EasypayPartnerApiError
 } from '../lib/easypayPartner.js';
-import { finalizeEasypayIntentPaid, loadEasypayIntentForStatus } from '../lib/finalizeEasypayIntent.js';
+import { finalizeEasypayIntentPaid, reconcileEasypayIntentIfPaid } from '../lib/finalizeEasypayIntent.js';
 import { extractEasypayPaymentMetadata, easypayPartnerPayloadIndicatesPaymentIncomplete } from '../lib/easypayPartnerPayload.js';
 import { roundMoney } from '../lib/money.js';
 
@@ -228,7 +228,8 @@ easypayPaymentsRouter.get(
       res.status(400).json({ message: 'Missing reference' });
       return;
     }
-    const result = await loadEasypayIntentForStatus(partnerExternalBookingId);
+    // Reconcile with DPay when local intent is still unpaid (missed webhook / early ACK).
+    const result = await reconcileEasypayIntentIfPaid(partnerExternalBookingId);
     res.json(result);
   })
 );
