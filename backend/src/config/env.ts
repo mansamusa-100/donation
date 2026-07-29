@@ -54,6 +54,11 @@ const envSchema = z.object({
   /** Session cookie SameSite. Use `none` only with HTTPS if frontend and API are on different sites. */
   AUTH_COOKIE_SAME_SITE: z.enum(['lax', 'none', 'strict']).default('lax'),
   /**
+   * Absolute directory for uploaded files (avatars, covers, verification IDs).
+   * In production with a volume, set e.g. `/app/uploads`. Default: `<cwd>/uploads`.
+   */
+  UPLOADS_DIR: z.string().default(''),
+  /**
    * Platform owner (primary admin). Required in production.
    * On startup the API creates this ADMIN if missing. Password is only reset when OWNER_PASSWORD_SYNC=true.
    */

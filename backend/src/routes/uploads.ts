@@ -10,8 +10,7 @@ import {
   writeCampaignCoverWebp,
   writeProfileAvatarWebp
 } from '../lib/processRasterUpload.js';
-
-const uploadsRoot = path.join(process.cwd(), 'uploads');
+import { getUploadsRoot } from '../lib/uploadPaths.js';
 
 function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
@@ -32,7 +31,7 @@ const coverUpload = multer({
 
 const verificationStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {
-    const dir = path.join(uploadsRoot, 'verification-ids');
+    const dir = path.join(getUploadsRoot(), 'verification-ids');
     ensureDir(dir);
     cb(null, dir);
   },

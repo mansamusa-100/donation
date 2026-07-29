@@ -2,8 +2,7 @@ import sharp from 'sharp';
 import fs from 'node:fs/promises';
 import path from 'path';
 import { randomBytes } from 'node:crypto';
-
-const uploadsRoot = path.join(process.cwd(), 'uploads');
+import { getUploadsRoot } from './uploadPaths.js';
 
 /** Max longest edge for campaign covers & gallery uploads (stored as WebP). */
 export const CAMPAIGN_IMAGE_MAX_EDGE = 1920;
@@ -25,7 +24,7 @@ function newWebpBasename() {
  * Resize, normalize orientation, and compress campaign imagery for faster loads (especially mobile).
  */
 export async function writeCampaignCoverWebp(buffer: Buffer): Promise<{ relativeUrl: string }> {
-  const dir = path.join(uploadsRoot, 'campaign-covers');
+  const dir = path.join(getUploadsRoot(), 'campaign-covers');
   await fs.mkdir(dir, { recursive: true });
   const filename = newWebpBasename();
   const outPath = path.join(dir, filename);
@@ -46,7 +45,7 @@ export async function writeCampaignCoverWebp(buffer: Buffer): Promise<{ relative
  * Crop-and-resize a profile picture to a centered square WebP avatar.
  */
 export async function writeProfileAvatarWebp(buffer: Buffer): Promise<{ relativeUrl: string }> {
-  const dir = path.join(uploadsRoot, 'avatars');
+  const dir = path.join(getUploadsRoot(), 'avatars');
   await fs.mkdir(dir, { recursive: true });
   const filename = newWebpBasename();
   const outPath = path.join(dir, filename);

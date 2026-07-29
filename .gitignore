@@ -14,8 +14,12 @@ dist-ssr
 .env
 .env.*
 !.env.example
+!.env.production.example
 frontend/.env
 backend/.env
+
+# Production secrets on the VPS (compose)
+.env.production
 
 # User uploads (keep directory with .gitkeep)
 backend/uploads/*

@@ -27,6 +27,7 @@ import { bankTransfersRouter } from './routes/bankTransfers.js';
 import { asyncHandler } from './lib/asyncHandler.js';
 import { handleWaveWebhook } from './routes/waveWebhook.js';
 import { handleEasypayPartnerWebhook } from './routes/easypayWebhook.js';
+import { getUploadsRoot } from './lib/uploadPaths.js';
 
 export const app = express();
 
@@ -53,7 +54,7 @@ app.post(
 app.use(express.json({ limit: '256kb' }));
 app.use(cookieParser());
 
-const uploadsRoot = path.join(process.cwd(), 'uploads');
+const uploadsRoot = getUploadsRoot();
 /** Public campaign imagery and avatars only — verification IDs are admin-only. */
 app.use('/uploads/avatars', express.static(path.join(uploadsRoot, 'avatars')));
 app.use('/uploads/campaign-covers', express.static(path.join(uploadsRoot, 'campaign-covers')));
@@ -79,7 +80,7 @@ const spaIndex = path.join(frontendDist, 'index.html');
 if (fs.existsSync(spaIndex)) {
   app.use(express.static(frontendDist));
   app.use((req, res, next) => {
-    if (req.method !== 'GET' || req.path.startsWith('/api')) {
+    if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
       next();
       return;
     }
