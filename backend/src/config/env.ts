@@ -52,7 +52,19 @@ const envSchema = z.object({
   /** Optional parent domain for the session cookie (e.g. `.barakahfund.site` for app + API subdomains). */
   AUTH_COOKIE_DOMAIN: z.string().default(''),
   /** Session cookie SameSite. Use `none` only with HTTPS if frontend and API are on different sites. */
-  AUTH_COOKIE_SAME_SITE: z.enum(['lax', 'none', 'strict']).default('lax')
+  AUTH_COOKIE_SAME_SITE: z.enum(['lax', 'none', 'strict']).default('lax'),
+  /**
+   * Platform owner (primary admin). Required in production.
+   * On startup the API creates this ADMIN if missing. Password is only reset when OWNER_PASSWORD_SYNC=true.
+   */
+  OWNER_EMAIL: z.string().default(''),
+  OWNER_PASSWORD: z.string().default(''),
+  OWNER_FULL_NAME: z.string().default('Platform Owner'),
+  /** When true, startup updates the owner account password from OWNER_PASSWORD (recovery / rotate). */
+  OWNER_PASSWORD_SYNC: z
+    .string()
+    .default('false')
+    .transform((v) => ['1', 'true', 'yes', 'on'].includes(v.trim().toLowerCase()))
 });
 
 const INSECURE_JWT_SECRETS = new Set([
@@ -75,6 +87,20 @@ if (env.NODE_ENV === 'production') {
     throw new Error(
       'JWT_SECRET must be a strong random value (at least 32 characters) in production. Generate one with: openssl rand -base64 48'
     );
+  }
+
+  const ownerEmail = env.OWNER_EMAIL.trim();
+  const ownerPassword = env.OWNER_PASSWORD;
+  if (!ownerEmail || !ownerPassword) {
+    throw new Error(
+      'OWNER_EMAIL and OWNER_PASSWORD are required in production (platform owner / primary admin credentials).'
+    );
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail)) {
+    throw new Error('OWNER_EMAIL must be a valid email address');
+  }
+  if (ownerPassword.length < 8) {
+    throw new Error('OWNER_PASSWORD must be at least 8 characters');
   }
 }
 

@@ -45,16 +45,29 @@ async function main() {
   await prisma.campaign.deleteMany();
   await prisma.user.deleteMany();
 
-  // Create admin user
-  const adminPassword = await hashPassword('admin@123');
+  const ownerEmail = (process.env.OWNER_EMAIL ?? '').trim().toLowerCase();
+  const ownerPassword = process.env.OWNER_PASSWORD ?? '';
+  const ownerFullName = (process.env.OWNER_FULL_NAME ?? '').trim() || 'Platform Owner';
+  if (!ownerEmail || !ownerPassword) {
+    throw new Error(
+      'Set OWNER_EMAIL and OWNER_PASSWORD in backend/.env before seeding (platform owner / primary admin).'
+    );
+  }
+  if (ownerPassword.length < 8) {
+    throw new Error('OWNER_PASSWORD must be at least 8 characters');
+  }
+
+  // Create platform owner (primary admin) from env — never hardcode credentials in source
+  const adminPassword = await hashPassword(ownerPassword);
   const adminUser = await prisma.user.create({
     data: {
-      email: 'admin@barakahfund.com',
+      email: ownerEmail,
       password: adminPassword,
-      fullName: 'Admin User',
+      fullName: ownerFullName,
       phoneNumber: '+220123456789',
       role: 'ADMIN',
-      isActive: true
+      isActive: true,
+      adminPanelPermissions: []
     }
   });
 
