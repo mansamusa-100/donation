@@ -32,17 +32,20 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /app/uploads/avatars /app/uploads/campaign-covers /app/uploads/verification-ids
 
-COPY --from=build /app/package.json /app/package-lock.json ./
+COPY --from=build /app/package.json ./
+COPY --from=build /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/frontend/package.json ./frontend/
 COPY --from=build /app/frontend/dist ./frontend/dist
 COPY --from=build /app/backend/package.json ./backend/
 COPY --from=build /app/backend/dist ./backend/dist
 COPY --from=build /app/backend/prisma ./backend/prisma
-COPY --from=build /app/backend/node_modules ./backend/node_modules
+# Workspaces hoist deps to /app/node_modules — do not expect backend/node_modules.
 
 WORKDIR /app/backend
 EXPOSE 4000
 
 # Migrate then serve API + built SPA from one process.
+# NODE_PATH helps resolve hoisted workspace packages from /app/node_modules.
+ENV NODE_PATH=/app/node_modules
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/index.js"]

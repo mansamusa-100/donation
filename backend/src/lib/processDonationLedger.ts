@@ -1,6 +1,21 @@
 import type { Currency, Prisma } from '@prisma/client';
 import { donationPlatformFeeFromGross } from '../config/fees.js';
 
+async function ensurePlatformStatRow(tx: Prisma.TransactionClient): Promise<void> {
+  await tx.platformStat.upsert({
+    where: { id: 'platform' },
+    create: {
+      id: 'platform',
+      totalRaised: 0,
+      campaignsFunded: 0,
+      totalDonors: 0,
+      communitiesHelped: 0,
+      totalPlatformTips: 0
+    },
+    update: {}
+  });
+}
+
 /** Records a voluntary platform tip and increments aggregate stats (not campaign raised). */
 export async function recordPlatformTip(
   tx: Prisma.TransactionClient,
@@ -32,6 +47,7 @@ export async function recordPlatformTip(
     }
   });
 
+  await ensurePlatformStatRow(tx);
   await tx.platformStat.update({
     where: { id: 'platform' },
     data: {
@@ -80,6 +96,7 @@ export async function applyDonationToLedger(
     }
   });
 
+  await ensurePlatformStatRow(tx);
   await tx.platformStat.update({
     where: { id: 'platform' },
     data: {
