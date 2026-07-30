@@ -51,7 +51,7 @@ export function HomePage() {
     setErrorMessage('');
     try {
       const [campaignData, categoryData, statsData] = await Promise.all([
-        api.getCampaigns(),
+        api.getCampaigns({ sort: 'newest' }),
         api.getCategories(),
         api.getStats()
       ]);
@@ -75,7 +75,7 @@ export function HomePage() {
     void load();
   }, [load]);
 
-  const trendingCampaigns = campaigns.filter((campaign) => campaign.isTrending).slice(0, 4);
+  const featuredCampaigns = campaigns.slice(0, 4);
 
   return (
     <div className="min-h-screen">
@@ -155,8 +155,8 @@ export function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-end mb-10">
             <div>
-              <h2 className="text-3xl font-display font-bold text-surface-900 mb-2">Trending Campaigns</h2>
-              {/* <p className="text-surface-500">Live data from your database — causes that are marked trending.</p> */}
+              <h2 className="text-3xl font-display font-bold text-surface-900 mb-2">New Campaigns</h2>
+              {/* Switch back to trending when more campaigns are marked trending. */}
             </div>
             <Link
               to="/explore"
@@ -167,9 +167,9 @@ export function HomePage() {
 
           {loadState === 'loading' && <TrendingSkeleton />}
 
-          {loadState !== 'loading' && trendingCampaigns.length > 0 && (
+          {loadState !== 'loading' && featuredCampaigns.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {trendingCampaigns.map((campaign, index) => (
+              {featuredCampaigns.map((campaign, index) => (
                 <motion.div
                   key={campaign.id}
                   initial={{ opacity: 0, y: 20 }}
@@ -183,11 +183,11 @@ export function HomePage() {
             </div>
           )}
 
-          {loadState === 'ready' && trendingCampaigns.length === 0 && (
+          {loadState === 'ready' && featuredCampaigns.length === 0 && (
             <div className="text-center py-16 px-4 bg-white rounded-2xl border border-surface-200">
-              <p className="text-surface-700 font-semibold mb-2">No trending campaigns yet</p>
+              <p className="text-surface-700 font-semibold mb-2">No campaigns yet</p>
               <p className="text-surface-500 text-sm mb-6 max-w-md mx-auto">
-                Seed the database or create a campaign. Mark campaigns as trending in the database to show them here.
+                Be the first to start a campaign, or check Explore once new causes go live.
               </p>
               <div className="flex flex-wrap justify-center gap-3">
                 <Link
