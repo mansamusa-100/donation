@@ -24,7 +24,12 @@ export async function assertCampaignAcceptsDonations(
   );
 
   if (!canAcceptDonations(campaign, balances)) {
-    throw new HttpError(400, 'This campaign has ended and is no longer accepting donations.');
+    throw new HttpError(
+      400,
+      campaign.ownerConfirmedEndAt != null
+        ? 'The organizer has ended fundraising for this campaign. New donations are no longer accepted.'
+        : 'This campaign has ended and is no longer accepting donations.'
+    );
   }
 
   return balances;

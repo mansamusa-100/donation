@@ -80,6 +80,11 @@ export function ExplorePage() {
       return 0;
     });
 
+  const activeCampaigns = filteredCampaigns.filter((c) => c.status !== 'Ended');
+  /** Past completed campaigns appear when browsing All Categories (public records). */
+  const pastCampaigns =
+    selectedCategory === 'All' ? filteredCampaigns.filter((c) => c.status === 'Ended') : [];
+
   return (
     <div className="min-h-screen bg-surface-50 py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -147,25 +152,50 @@ export function ExplorePage() {
           </div>
         )}
 
-        {loadState !== 'loading' && filteredCampaigns.length > 0 && (
+        {loadState !== 'loading' && activeCampaigns.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredCampaigns.map((campaign) => (
+            {activeCampaigns.map((campaign) => (
               <CampaignCard key={campaign.id} campaign={campaign} />
             ))}
           </div>
         )}
 
-        {loadState === 'ready' && filteredCampaigns.length === 0 && (
+        {loadState === 'ready' &&
+          activeCampaigns.length === 0 &&
+          pastCampaigns.length > 0 &&
+          selectedCategory === 'All' && (
+            <p className="text-center text-sm text-surface-500 mb-8">
+              No live campaigns match right now — browse past campaigns below.
+            </p>
+          )}
+
+        {loadState === 'ready' && selectedCategory === 'All' && pastCampaigns.length > 0 && (
+          <section className={activeCampaigns.length > 0 ? 'mt-16' : ''}>
+            <div className="mb-6">
+              <h2 className="text-2xl font-display font-bold text-surface-900">Past campaigns</h2>
+              <p className="text-surface-500 text-sm mt-1">
+                Completed campaigns kept as public records — you can still open and read them.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {pastCampaigns.map((campaign) => (
+                <CampaignCard key={campaign.id} campaign={campaign} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {loadState === 'ready' && activeCampaigns.length === 0 && pastCampaigns.length === 0 && (
           <div className="text-center py-24 bg-white rounded-2xl border border-surface-200">
             <div className="w-16 h-16 bg-surface-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <SearchIcon className="w-8 h-8 text-surface-400" />
             </div>
             <h3 className="text-xl font-bold text-surface-900 mb-2">
-              {campaigns.length === 0 ? 'No active campaigns yet' : 'No campaigns match your filters'}
+              {campaigns.length === 0 ? 'No campaigns yet' : 'No campaigns match your filters'}
             </h3>
             <p className="text-surface-500">
               {campaigns.length === 0
-                ? 'Create one or run the database seed to see campaigns here.'
+                ? 'Create one to see it appear here.'
                 : 'Try adjusting your search or filters.'}
             </p>
             {campaigns.length > 0 && (

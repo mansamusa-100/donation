@@ -10,6 +10,7 @@ interface CampaignCardProps {
 }
 export function CampaignCard({ campaign }: CampaignCardProps) {
   const progress = campaign.raisedAmount / campaign.goalAmount * 100;
+  const isEnded = campaign.status === 'Ended';
   return (
     <motion.div
       whileHover={{
@@ -24,8 +25,13 @@ export function CampaignCard({ campaign }: CampaignCardProps) {
             alt={campaign.title}
             className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" />
           
-          <div className="absolute top-3 left-3">
+          <div className="absolute top-3 left-3 flex flex-wrap gap-2">
             <CategoryBadge category={campaign.category} />
+            {isEnded ? (
+              <span className="inline-flex items-center rounded-full bg-surface-900/80 px-2.5 py-0.5 text-xs font-semibold text-white backdrop-blur-sm">
+                Ended
+              </span>
+            ) : null}
           </div>
         </div>
 
@@ -57,7 +63,7 @@ export function CampaignCard({ campaign }: CampaignCardProps) {
               </div>
               <div className="flex items-center gap-1.5">
                 <ClockIcon className="w-4 h-4" />
-                <span>{campaign.daysLeft} days left</span>
+                <span>{isEnded ? 'Completed' : `${campaign.daysLeft} days left`}</span>
               </div>
             </div>
           </div>

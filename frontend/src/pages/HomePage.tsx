@@ -55,7 +55,7 @@ export function HomePage() {
         api.getCategories(),
         api.getStats()
       ]);
-      setCampaigns(campaignData);
+      setCampaigns(campaignData.filter((c) => c.status !== 'Ended'));
       setCategories(categoryData);
       setStats({ ...emptyStats, ...statsData });
       setLoadState('ready');

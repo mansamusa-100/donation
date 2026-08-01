@@ -695,13 +695,13 @@ function CampaignRow({
           )}
           {fundraisingPeriodEnded && acceptingDonations && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 mt-2">
-              Fundraising period ended. Donations still accepted.
+              Fundraising period ended. Donations still accepted until you confirm end of campaign.
             </p>
           )}
-          {campaign.ownerConfirmedEndAt && acceptingDonations && (
+          {campaign.ownerConfirmedEndAt && !acceptingDonations && (
             <p className="text-xs text-surface-600 mt-2">
-              You confirmed end — donations stop after all funds are paid out (
-              {campaign.allFundsPaidOut ? 'complete' : 'pending payout'}).
+              You confirmed end of campaign — new donations are closed. The campaign stays visible
+              {campaign.allFundsPaidOut ? '.' : ' while you withdraw remaining funds.'}
             </p>
           )}
           {pendingExtension && (

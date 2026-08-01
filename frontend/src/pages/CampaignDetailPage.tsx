@@ -112,14 +112,17 @@ export function CampaignDetailPage() {
           <div
             role="status"
             className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-            <strong className="font-bold">Fundraising period ended.</strong> Donations still accepted.
+            <strong className="font-bold">Fundraising period ended.</strong> Donations are still accepted until the
+            organizer confirms end of campaign.
           </div>
         )}
         {!acceptingDonations && (
           <div
             role="status"
             className="mb-6 rounded-xl border border-surface-200 bg-surface-100 px-4 py-3 text-sm text-surface-700">
-            This campaign has ended and is no longer accepting donations.
+            {campaign.status === 'Ended'
+              ? 'This campaign has finished. It remains available as a public record — donations are closed.'
+              : 'This campaign is no longer accepting donations.'}
           </div>
         )}
         <div className="flex flex-col lg:flex-row gap-8 items-start">

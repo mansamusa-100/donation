@@ -92,12 +92,16 @@ export function isCampaignFullyEnded(
 
 export function canAcceptDonations(
   campaign: Pick<Campaign, 'status' | 'endsAt' | 'ownerConfirmedEndAt' | 'raisedAmount'>,
-  balances: CampaignWithdrawalBalances
+  _balances?: CampaignWithdrawalBalances
 ): boolean {
   if (campaign.status !== 'Active') {
     return false;
   }
-  return !isCampaignFullyEnded(campaign, balances);
+  // Owner confirm-end stops new donations immediately; campaign stays visible until fully paid out / Ended.
+  if (campaign.ownerConfirmedEndAt != null) {
+    return false;
+  }
+  return true;
 }
 
 export function canRequestWithdrawal(status: CampaignStatus): boolean {

@@ -119,7 +119,8 @@ model Campaign {
   termsAcceptedAt         DateTime?
   isTrending       Boolean        @default(false)
   status           CampaignStatus @default(Active)
-  /// Owner confirmed they want to close; donations stop once all funds are Paid out.
+  /// Owner confirmed they want to close fundraising; new donations stop immediately.
+  /// Campaign stays visible (Active) until funds are paid out, then may move to Ended.
   ownerConfirmedEndAt DateTime?
   /// When the campaign reached terminal Ended status.
   endedAt          DateTime?

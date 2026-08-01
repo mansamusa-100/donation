@@ -155,7 +155,8 @@ campaignsRouter.get(
 
     const campaigns = await prisma.campaign.findMany({
       where: {
-        status: 'Active',
+        // Public archive: Active (live) + Ended (completed records). Closed/Rejected stay private.
+        status: { in: ['Active', 'Ended'] },
         ...(query.category ? { category: query.category } : {}),
         ...(query.search
           ? {
@@ -190,8 +191,15 @@ campaignsRouter.get(
       }
     });
 
+    // Keep live campaigns first, then completed records.
+    const sorted = [...campaigns].sort((a, b) => {
+      if (a.status === 'Active' && b.status !== 'Active') return -1;
+      if (a.status !== 'Active' && b.status === 'Active') return 1;
+      return 0;
+    });
+
     res.json(
-      campaigns.map((c) => ({
+      sorted.map((c) => ({
         ...serializeCampaign(c),
         fundraisingPeriodEnded: isFundraisingPeriodEnded(c.endsAt),
         acceptingDonations: c.status === 'Active' && c.ownerConfirmedEndAt == null
@@ -521,7 +529,7 @@ campaignsRouter.get(
       select: { id: true, status: true }
     });
 
-    if (!campaign || campaign.status !== 'Active') {
+    if (!campaign || (campaign.status !== 'Active' && campaign.status !== 'Ended')) {
       res.status(404).json({ message: 'Campaign not found' });
       return;
     }
@@ -554,7 +562,8 @@ campaignsRouter.get(
       return;
     }
 
-    if (campaign.status !== 'Active') {
+    // Public pages: live + completed records. Closed (e.g. account closure) stays private.
+    if (campaign.status !== 'Active' && campaign.status !== 'Ended') {
       res.status(404).json({ message: 'Campaign not found' });
       return;
     }
