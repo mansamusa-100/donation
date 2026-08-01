@@ -2,10 +2,12 @@ import type {
   Campaign,
   Category,
   CategorySummary,
+  CampaignExtensionRequestSummary,
   CreatorDashboardOverview,
   CreatorWithdrawalRequest,
-  PlatformStats } from
-'../types/campaign';
+  Donor,
+  PlatformStats
+} from '../types/campaign';
 import type {
   AdminAccountRow,
   AdminActivityItem,
@@ -18,7 +20,6 @@ import type {
   AdminUserRow,
   AdminWithdrawalRequestRow
 } from '../types/admin';
-import type { CampaignExtensionRequestSummary } from '../types/campaign';
 import type { PayoutMethodType, PayoutDetails, UserPayoutMethod } from '../types/payout';
 import type { User } from '../types/user';
 import { toUserFriendlyError } from './userFriendlyError';
@@ -240,6 +241,10 @@ export const api = {
 
   getCampaignBySlug(slug: string) {
     return request<Campaign>(`/api/campaigns/${encodeURIComponent(slug)}`);
+  },
+
+  getCampaignDonations(slug: string) {
+    return request<Donor[]>(`/api/campaigns/${encodeURIComponent(slug)}/donations`);
   },
 
   getCreatorDashboard() {

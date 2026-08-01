@@ -248,7 +248,11 @@ export function CampaignDetailPage() {
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-surface-200">
               <h3 className="font-display font-bold text-xl mb-6">Recent Donors</h3>
-              <DonorWall donors={campaign.recentDonors} />
+              <DonorWall
+                donors={campaign.recentDonors}
+                campaignSlug={campaign.slug}
+                donorCount={campaign.donorCount}
+              />
             </div>
           </div>
         </div>

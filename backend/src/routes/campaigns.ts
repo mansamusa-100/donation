@@ -513,6 +513,30 @@ campaignsRouter.post(
 );
 
 campaignsRouter.get(
+  '/:slug/donations',
+  asyncHandler(async (req, res) => {
+    const slug = String(req.params.slug);
+    const campaign = await prisma.campaign.findUnique({
+      where: { slug },
+      select: { id: true, status: true }
+    });
+
+    if (!campaign || campaign.status !== 'Active') {
+      res.status(404).json({ message: 'Campaign not found' });
+      return;
+    }
+
+    const donations = await prisma.donation.findMany({
+      where: { campaignId: campaign.id },
+      orderBy: { createdAt: 'desc' },
+      take: 500
+    });
+
+    res.json(donations.map(serializeDonation));
+  })
+);
+
+campaignsRouter.get(
   '/:slug',
   asyncHandler(async (req, res) => {
     const campaign = await prisma.campaign.findUnique({
@@ -520,7 +544,7 @@ campaignsRouter.get(
       include: {
         donations: {
           orderBy: { createdAt: 'desc' },
-          take: 10
+          take: 5
         }
       }
     });
