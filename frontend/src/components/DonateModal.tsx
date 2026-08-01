@@ -789,10 +789,6 @@ export function DonateModal({
                             Platform tip: <strong>D{platformTipAmount}</strong>
                           </li>
                         ) : null}
-                        <li>
-                          Wave will charge:{' '}
-                          <strong>D{chargeTotal}</strong>
-                        </li>
                       </ul>
                       <p className="text-xs text-surface-600">
                         {easypayCheckout
