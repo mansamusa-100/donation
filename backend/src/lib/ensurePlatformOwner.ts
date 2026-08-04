@@ -6,6 +6,10 @@ import { prisma } from './prisma.js';
 /**
  * Ensures the platform owner ADMIN exists when OWNER_EMAIL + OWNER_PASSWORD are set.
  * Does not wipe unrelated users. Password updates only when OWNER_PASSWORD_SYNC=true.
+ *
+ * Security: never promote an existing non-admin to ADMIN without OWNER_PASSWORD_SYNC —
+ * otherwise an attacker who pre-registered OWNER_EMAIL would keep their password and
+ * gain full admin panels on the next boot.
  */
 export async function ensurePlatformOwner(): Promise<void> {
   const email = env.OWNER_EMAIL.trim().toLowerCase();
@@ -26,7 +30,9 @@ export async function ensurePlatformOwner(): Promise<void> {
     throw new Error(`OWNER_PASSWORD must be at least ${PASSWORD_MIN_LENGTH} characters`);
   }
 
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await prisma.user.findFirst({
+    where: { email: { equals: email, mode: 'insensitive' } }
+  });
 
   if (!existing) {
     const hash = await bcryptjs.hash(password, 10);
@@ -44,6 +50,19 @@ export async function ensurePlatformOwner(): Promise<void> {
     return;
   }
 
+  if (existing.role !== 'ADMIN' && !env.OWNER_PASSWORD_SYNC) {
+    const message =
+      `[owner] Refusing to promote existing user ${existing.email} to platform owner without ` +
+      'OWNER_PASSWORD_SYNC=true. That flag resets the password from OWNER_PASSWORD so a ' +
+      'pre-registered account cannot keep attacker credentials. Set OWNER_PASSWORD_SYNC=true ' +
+      'for one boot, then turn it off.';
+    if (env.NODE_ENV === 'production') {
+      throw new Error(message);
+    }
+    console.error(message);
+    return;
+  }
+
   const data: {
     role?: 'ADMIN';
     isActive?: boolean;
@@ -52,7 +71,12 @@ export async function ensurePlatformOwner(): Promise<void> {
     adminPanelPermissions?: string[];
     password?: string;
     tokenVersion?: number;
+    email?: string;
   } = {};
+
+  if (existing.email !== email) {
+    data.email = email;
+  }
 
   if (existing.role !== 'ADMIN') {
     data.role = 'ADMIN';
@@ -80,7 +104,9 @@ export async function ensurePlatformOwner(): Promise<void> {
     data
   });
 
-  if (env.OWNER_PASSWORD_SYNC) {
+  if (env.OWNER_PASSWORD_SYNC && existing.role !== 'ADMIN') {
+    console.log(`[owner] Promoted and password-synced platform owner: ${email}`);
+  } else if (env.OWNER_PASSWORD_SYNC) {
     console.log(`[owner] Synced platform owner password from env: ${email}`);
   } else if (existing.role !== 'ADMIN') {
     console.log(`[owner] Promoted existing user to platform owner admin: ${email}`);

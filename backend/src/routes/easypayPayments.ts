@@ -19,7 +19,12 @@ import {
   easypayApsCompleteForPlatform,
   EasypayPartnerApiError
 } from '../lib/easypayPartner.js';
-import { finalizeEasypayIntentPaid, reconcileEasypayIntentIfPaid } from '../lib/finalizeEasypayIntent.js';
+import {
+  finalizeEasypayIntentPaid,
+  reconcileEasypayIntentIfPaid,
+  EasypayAmountMismatchError,
+  parseGmdTotalCents
+} from '../lib/finalizeEasypayIntent.js';
 import { extractEasypayPaymentMetadata, easypayPartnerPayloadIndicatesPaymentIncomplete } from '../lib/easypayPartnerPayload.js';
 import { roundMoney } from '../lib/money.js';
 
@@ -311,27 +316,23 @@ easypayPaymentsRouter.post(
       });
 
       const meta = extractEasypayPaymentMetadata(data);
-      let paymentId = meta.paymentId;
-      let ledgerAmountFromBody: unknown = meta.amount;
+      const paymentId = meta.paymentId;
+      const ledgerAmountFromBody: unknown = meta.amount;
       const stillUnpaid = await prisma.easypayPaymentIntent.findUnique({
         where: { id: intent.id },
         select: { donationId: true }
       });
-      if (!stillUnpaid?.donationId && !paymentId) {
-        if (easypayPartnerPayloadIndicatesPaymentIncomplete(data)) {
-          console.warn(
-            '[easypay] APS complete: no paymentId and response looks non-final; not synthesizing ledger row',
-            { partnerExternalBookingId: intent.partnerExternalBookingId }
-          );
-        } else {
-          paymentId = `epay-aps:${intent.partnerExternalBookingId}`;
-          ledgerAmountFromBody = undefined;
-          console.info('[easypay] APS complete: synthesizing receipt id (no paymentId in response body)', {
-            partnerExternalBookingId: intent.partnerExternalBookingId
-          });
-        }
-      }
-      if (paymentId && !stillUnpaid?.donationId) {
+      if (!stillUnpaid?.donationId && (!paymentId || parseGmdTotalCents(ledgerAmountFromBody) === null)) {
+        console.warn(
+          '[easypay] APS complete: missing paymentId or amount — not finalizing (wait for webhook)',
+          {
+            partnerExternalBookingId: intent.partnerExternalBookingId,
+            hasPaymentId: Boolean(paymentId),
+            hasAmount: parseGmdTotalCents(ledgerAmountFromBody) !== null,
+            incomplete: easypayPartnerPayloadIndicatesPaymentIncomplete(data)
+          }
+        );
+      } else if (paymentId && !stillUnpaid?.donationId) {
         try {
           await prisma.easypayWebhookReceipt.create({
             data: { paymentId, event: 'payment.completed' }
@@ -341,11 +342,19 @@ easypayPaymentsRouter.post(
             throw e;
           }
         }
-        await finalizeEasypayIntentPaid({
-          intent,
-          webhookPaymentId: paymentId,
-          grossAmountFromWebhook: ledgerAmountFromBody
-        });
+        try {
+          await finalizeEasypayIntentPaid({
+            intent,
+            webhookPaymentId: paymentId,
+            grossAmountFromWebhook: ledgerAmountFromBody
+          });
+        } catch (finalizeErr) {
+          if (finalizeErr instanceof EasypayAmountMismatchError) {
+            console.error('[easypay] APS complete refused amount mismatch/missing', finalizeErr.message);
+          } else {
+            throw finalizeErr;
+          }
+        }
       }
 
       res.json({ data });

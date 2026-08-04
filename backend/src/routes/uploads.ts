@@ -30,8 +30,13 @@ const coverUpload = multer({
 });
 
 const verificationStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const dir = path.join(getUploadsRoot(), 'verification-ids');
+  destination: (req, _file, cb) => {
+    const userId = (req as AuthRequest).userId;
+    if (!userId) {
+      cb(new Error('Authentication required'), '');
+      return;
+    }
+    const dir = path.join(getUploadsRoot(), 'verification-ids', userId);
     ensureDir(dir);
     cb(null, dir);
   },
@@ -109,13 +114,18 @@ uploadsRouter.post(
       res.status(400).json({ message: 'No file uploaded' });
       return;
     }
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ message: 'Authentication required' });
+      return;
+    }
     try {
       let url: string;
       if (req.file.mimetype.startsWith('image/')) {
-        const { relativeUrl } = await convertVerificationImageFileToWebp(req.file.path);
+        const { relativeUrl } = await convertVerificationImageFileToWebp(req.file.path, userId);
         url = relativeUrl;
       } else {
-        url = `/uploads/verification-ids/${req.file.filename}`;
+        url = `/uploads/verification-ids/${userId}/${req.file.filename}`;
       }
       res.json({ url });
     } catch (err) {

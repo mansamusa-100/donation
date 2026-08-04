@@ -39,6 +39,7 @@ import { serializeWithdrawalPayout } from '../lib/payoutMethods.js';
 import { expireStaleBankTransferIntents } from '../lib/expireBankTransfers.js';
 import { serializeBankTransferIntent } from '../lib/bankTransferSerialize.js';
 import { serializePlatformBankAccount } from '../lib/platformBankAccountSerialize.js';
+import { isOwnedVerificationDocumentUrl } from '../lib/processRasterUpload.js';
 
 const campaignQuerySchema = z.object({
   search: z.string().trim().optional(),
@@ -724,7 +725,7 @@ campaignsRouter.post(
 
 campaignsRouter.post(
   '/',
-  optionalAuthenticate,
+  authenticate,
   asyncHandler(async (req: AuthRequest, res) => {
     if (req.userRole === 'ADMIN') {
       res.status(403).json({
@@ -734,7 +735,21 @@ campaignsRouter.post(
       return;
     }
 
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ message: 'Authentication required' });
+      return;
+    }
+
     const body = createCampaignSchema.parse(req.body);
+    if (!isOwnedVerificationDocumentUrl(body.verificationDocumentUrl, userId)) {
+      res.status(400).json({
+        message:
+          'ID verification document is missing or does not belong to your account. Please upload your ID again.'
+      });
+      return;
+    }
+
     const endResult = validateNewCampaignEndDate(body.campaignEndDate);
     if (!endResult.ok) {
       res.status(400).json({ message: endResult.message });
@@ -748,9 +763,9 @@ campaignsRouter.post(
 
     // Use the organizer's own profile picture; no demo/placeholder fallback.
     let organizerAvatar: string | null = body.creatorAvatar ?? null;
-    if (!organizerAvatar && req.userId) {
+    if (!organizerAvatar) {
       const owner = await prisma.user.findUnique({
-        where: { id: req.userId },
+        where: { id: userId },
         select: { avatarUrl: true }
       });
       organizerAvatar = owner?.avatarUrl ?? null;
@@ -773,25 +788,18 @@ campaignsRouter.post(
         verificationDocumentUrl: body.verificationDocumentUrl,
         termsAcceptedAt: new Date(body.termsAcceptedAt),
         status: 'PendingReview',
-        creatorId: req.userId || undefined
+        creatorId: userId
       },
       include: {
         donations: true
       }
     });
 
-    let creatorLabel = body.creatorName;
-    if (req.userId) {
-      const u = await prisma.user.findUnique({
-        where: { id: req.userId },
-        select: { email: true, fullName: true }
-      });
-      if (u) {
-        creatorLabel = `${u.fullName} (${u.email})`;
-      }
-    } else {
-      creatorLabel = `${body.creatorName} (no account — submitted as guest)`;
-    }
+    const u = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, fullName: true }
+    });
+    const creatorLabel = u ? `${u.fullName} (${u.email})` : body.creatorName;
 
     await recordActivity({
       type: 'CAMPAIGN_SUBMITTED',
@@ -799,7 +807,7 @@ campaignsRouter.post(
       detail: `Slug: ${campaign.slug} · ${creatorLabel}`,
       campaignId: campaign.id,
       userId: campaign.creatorId ?? null,
-      actorId: req.userId ?? null
+      actorId: userId
     });
 
     await notifyAdminsCampaignSubmitted({
@@ -808,19 +816,13 @@ campaignsRouter.post(
       creatorLabel
     });
 
-    if (req.userId) {
-      const creator = await prisma.user.findUnique({
-        where: { id: req.userId },
-        select: { email: true, fullName: true }
+    if (u?.email) {
+      void sendCampaignCreatedConfirmation({
+        to: u.email,
+        fullName: u.fullName,
+        campaignTitle: campaign.title,
+        campaignSlug: campaign.slug
       });
-      if (creator?.email) {
-        void sendCampaignCreatedConfirmation({
-          to: creator.email,
-          fullName: creator.fullName,
-          campaignTitle: campaign.title,
-          campaignSlug: campaign.slug
-        });
-      }
     }
 
     res.status(201).json(serializeCampaign(campaign));

@@ -10,7 +10,7 @@ import { roundMoney } from './money.js';
 import { lockEasypayPaymentIntentForUpdate } from './paymentIntentLock.js';
 
 /** Parse a reported GMD total in bututs/cents so decimal amounts compare exactly. */
-function parseGmdTotalCents(value: unknown): number | null {
+export function parseGmdTotalCents(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return Math.round(value * 100);
   }
@@ -23,23 +23,30 @@ function parseGmdTotalCents(value: unknown): number | null {
   return null;
 }
 
+const EASYPAY_PAID_STATUSES = new Set([
+  'paid',
+  'completed',
+  'complete',
+  'succeeded',
+  'success',
+  'settled'
+]);
+
+/**
+ * Exact allowlist only — never use substring `includes('paid')` (matches `unpaid` / `not_paid`).
+ */
 export function isEasypayOrderPaidStatus(status: string): boolean {
   const n = String(status || '')
     .toLowerCase()
     .replace(/[\s-]+/g, '_');
-  if (!n) {
+  if (!n || n === 'unpaid' || n === 'not_paid' || n.includes('unpaid')) {
     return false;
   }
-  return (
-    n === 'paid' ||
-    n === 'completed' ||
-    n === 'complete' ||
-    n === 'succeeded' ||
-    n === 'success' ||
-    n === 'settled' ||
-    n.endsWith('_paid') ||
-    n.includes('paid')
-  );
+  if (EASYPAY_PAID_STATUSES.has(n)) {
+    return true;
+  }
+  // e.g. order_paid — but not not_paid (already excluded above)
+  return n.endsWith('_paid');
 }
 
 export class EasypayAmountMismatchError extends Error {
@@ -84,7 +91,16 @@ export async function finalizeEasypayIntentPaid(params: {
 
   const expectedGross = Math.round((intent.amount + intent.platformTipAmount) * 100);
   const got = parseGmdTotalCents(params.grossAmountFromWebhook);
-  if (got !== null && got !== expectedGross) {
+  // Fail closed: missing/unparseable partner amount must not credit the ledger.
+  if (got === null) {
+    console.error('[easypay] missing partner amount — refusing to finalize', {
+      partnerExternalBookingId: intent.partnerExternalBookingId,
+      expectedGrossCents: expectedGross,
+      webhookPaymentId
+    });
+    throw new EasypayAmountMismatchError(expectedGross, Number.NaN);
+  }
+  if (got !== expectedGross) {
     console.error('[easypay] amount mismatch vs intent — refusing to finalize', {
       partnerExternalBookingId: intent.partnerExternalBookingId,
       expectedGrossCents: expectedGross,
@@ -242,37 +258,34 @@ export async function reconcileEasypayIntentIfPaid(
       currency: intent.currency
     });
     if (isEasypayOrderPaidStatus(order.status)) {
-      shouldFinalize = true;
-      reconcilePaymentId = `epay-reconcile:${intent.partnerExternalBookingId}:${order.id}`;
-      orderAmount = order.total;
-      console.info('[easypay] reconcile: partner order looks paid', {
-        partnerExternalBookingId: intent.partnerExternalBookingId,
-        orderId: order.id,
-        status: order.status
-      });
-    }
-  } catch (err) {
-    if (err instanceof EasypayPartnerApiError) {
-      const bodyText = JSON.stringify(err.body ?? {}).toLowerCase();
-      if (
-        err.status === 409 ||
-        bodyText.includes('already paid') ||
-        bodyText.includes('already_paid') ||
-        bodyText.includes('"paid"') ||
-        (bodyText.includes('paid') && bodyText.includes('order'))
-      ) {
-        shouldFinalize = true;
-        console.info('[easypay] reconcile: partner create-order indicates paid', {
+      const cents = parseGmdTotalCents(order.total);
+      if (cents === null) {
+        console.warn('[easypay] reconcile: paid status but missing order amount — not finalizing', {
           partnerExternalBookingId: intent.partnerExternalBookingId,
-          status: err.status
+          orderId: order.id,
+          status: order.status
         });
       } else {
-        console.warn('[easypay] reconcile create-order failed', {
+        shouldFinalize = true;
+        reconcilePaymentId = `epay-reconcile:${intent.partnerExternalBookingId}:${order.id}`;
+        orderAmount = order.total;
+        console.info('[easypay] reconcile: partner order looks paid', {
           partnerExternalBookingId: intent.partnerExternalBookingId,
-          status: err.status,
-          message: err.message.slice(0, 300)
+          orderId: order.id,
+          status: order.status
         });
       }
+    }
+  } catch (err) {
+    // Never infer "paid" from HTTP 409 or loose error-body substrings (free-credit vector).
+    // Missed webhooks are recovered only when create-order returns an explicit paid status + amount,
+    // or when the signed webhook / APS complete path supplies a verified amount.
+    if (err instanceof EasypayPartnerApiError) {
+      console.warn('[easypay] reconcile create-order failed — not treating as paid', {
+        partnerExternalBookingId: intent.partnerExternalBookingId,
+        status: err.status,
+        message: err.message.slice(0, 300)
+      });
     } else {
       console.warn('[easypay] reconcile error', err);
     }
@@ -292,13 +305,11 @@ export async function reconcileEasypayIntentIfPaid(
       await finalizeEasypayIntentPaid({
         intent,
         webhookPaymentId: reconcilePaymentId,
-        // Reconcile without a partner amount uses intent totals (undefined skips mismatch check).
-        // When order.amount is present it is validated fail-closed.
         grossAmountFromWebhook: orderAmount
       });
     } catch (err) {
       if (err instanceof EasypayAmountMismatchError) {
-        console.error('[easypay] reconcile refused amount mismatch', err.message);
+        console.error('[easypay] reconcile refused amount mismatch/missing', err.message);
       } else {
         throw err;
       }

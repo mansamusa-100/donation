@@ -65,9 +65,14 @@ export async function writeProfileAvatarWebp(buffer: Buffer): Promise<{ relative
 
 /**
  * Replace a temp verification-ID image on disk with a compressed WebP. PDFs are untouched (caller skips).
+ * Files live under `verification-ids/{userId}/` so campaign submit can bind ownership.
  */
-export async function convertVerificationImageFileToWebp(absolutePath: string): Promise<{ relativeUrl: string }> {
-  const dir = path.dirname(absolutePath);
+export async function convertVerificationImageFileToWebp(
+  absolutePath: string,
+  userId: string
+): Promise<{ relativeUrl: string }> {
+  const dir = path.join(getUploadsRoot(), 'verification-ids', userId);
+  await fs.mkdir(dir, { recursive: true });
   const filename = newWebpBasename();
   const outPath = path.join(dir, filename);
 
@@ -82,5 +87,18 @@ export async function convertVerificationImageFileToWebp(absolutePath: string): 
 
   await fs.unlink(absolutePath).catch(() => {});
 
-  return { relativeUrl: `/uploads/verification-ids/${filename}` };
+  return { relativeUrl: `/uploads/verification-ids/${userId}/${filename}` };
+}
+
+/** True when `url` is a verification doc path owned by `userId` (no path traversal). */
+export function isOwnedVerificationDocumentUrl(url: string, userId: string): boolean {
+  const prefix = `/uploads/verification-ids/${userId}/`;
+  if (!url.startsWith(prefix)) {
+    return false;
+  }
+  const rest = url.slice(prefix.length);
+  if (!rest || rest.includes('..') || rest.includes('/') || rest.includes('\\')) {
+    return false;
+  }
+  return /^[\w.-]+$/.test(rest);
 }

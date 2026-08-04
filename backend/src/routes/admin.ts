@@ -39,6 +39,7 @@ import { sendBankTransferRejectedEmail } from '../lib/mail.js';
 import { HttpError } from '../lib/HttpError.js';
 import { boundedMoneySchema } from '../lib/money.js';
 import { newPasswordSchema } from '../lib/passwordPolicy.js';
+import { normalizeEmail } from '../lib/normalizeEmail.js';
 
 const adminRouter = Router();
 
@@ -983,6 +984,20 @@ adminRouter.patch(
       return;
     }
 
+    if (user.role === 'ADMIN' && !isActive) {
+      const canManageAdmins = hasAdminPanelAccess(
+        req.userRole ?? 'USER',
+        req.adminPanelPermissions,
+        'admins'
+      );
+      if (!canManageAdmins) {
+        res.status(403).json({
+          message: 'Only admins with the admins panel can deactivate other admin accounts'
+        });
+        return;
+      }
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
@@ -1124,7 +1139,7 @@ adminRouter.post(
     const passwordHash = await hashPassword(body.password);
     const created = await prisma.user.create({
       data: {
-        email: body.email.trim(),
+        email: normalizeEmail(body.email),
         fullName: body.fullName,
         phoneNumber: body.phoneNumber?.trim() || null,
         password: passwordHash,

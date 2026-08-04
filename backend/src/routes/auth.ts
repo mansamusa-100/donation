@@ -29,6 +29,7 @@ import {
   createPasswordResetToken,
   hashPasswordResetToken
 } from '../lib/passwordResetToken.js';
+import { normalizeEmail } from '../lib/normalizeEmail.js';
 
 const authRouter = Router();
 
@@ -144,10 +145,10 @@ authRouter.post(
   '/register',
   asyncHandler(async (req, res) => {
     const body = registerSchema.parse(req.body);
+    const email = normalizeEmail(body.email);
 
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email: body.email }
+    const existingUser = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } }
     });
 
     if (existingUser) {
@@ -159,7 +160,7 @@ authRouter.post(
 
     const user = await prisma.user.create({
       data: {
-        email: body.email,
+        email,
         password: hashedPassword,
         fullName: body.fullName,
         phoneNumber: body.phoneNumber
@@ -184,7 +185,7 @@ authRouter.post(
   '/forgot-password',
   asyncHandler(async (req, res) => {
     const body = forgotPasswordSchema.parse(req.body);
-    const emailInput = body.email.trim();
+    const emailInput = normalizeEmail(body.email);
 
     const user = await prisma.user.findFirst({
       where: { email: { equals: emailInput, mode: 'insensitive' } }
@@ -254,9 +255,10 @@ authRouter.post(
   '/login',
   asyncHandler(async (req, res) => {
     const body = loginSchema.parse(req.body);
+    const email = normalizeEmail(body.email);
 
-    const user = await prisma.user.findUnique({
-      where: { email: body.email },
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
       select: {
         id: true,
         email: true,
@@ -338,7 +340,7 @@ authRouter.post(
       return;
     }
 
-    const email = payload.email.toLowerCase();
+    const email = normalizeEmail(payload.email);
 
     let user = await prisma.user.findUnique({ where: { googleId: payload.sub } });
     let isNewUser = false;
