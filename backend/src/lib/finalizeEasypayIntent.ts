@@ -165,6 +165,16 @@ export async function finalizeEasypayIntentPaid(params: {
     return { recorded: false };
   }
 
+  console.info('[easypay] donation recorded', {
+    partnerExternalBookingId: intent.partnerExternalBookingId,
+    campaignSlug: intent.campaign.slug,
+    campaignDonationAmount: intent.amount,
+    platformTipAmount: intent.platformTipAmount,
+    currency: intent.currency,
+    webhookPaymentId,
+    donorName: intent.isAnonymous ? 'Anonymous' : intent.donorName
+  });
+
   if (intent.userId) {
     void (async () => {
       const u = await prisma.user.findUnique({
