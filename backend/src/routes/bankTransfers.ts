@@ -8,7 +8,8 @@ import { donationCheckoutBodySchema } from '../lib/donationCheckoutSchema.js';
 import { assertCampaignAcceptsDonations } from '../lib/assertCampaignAcceptsDonations.js';
 import {
   bankTransferExpiresAt,
-  generateUniqueBankTransferReference
+  generateUniqueBankTransferReference,
+  normalizeBankTransferReference
 } from '../lib/bankTransferReference.js';
 import { expireStaleBankTransferIntents } from '../lib/expireBankTransfers.js';
 import { serializeBankTransferIntent } from '../lib/bankTransferSerialize.js';
@@ -182,7 +183,11 @@ bankTransfersRouter.get(
   asyncHandler(async (req, res) => {
     await expireStaleBankTransferIntents();
 
-    const reference = String(req.params.reference).trim().toUpperCase();
+    const reference = normalizeBankTransferReference(String(req.params.reference ?? ''));
+    if (!reference) {
+      res.status(400).json({ message: 'Transfer reference is required' });
+      return;
+    }
     const intent = await prisma.bankTransferIntent.findUnique({
       where: { clientReference: reference },
       include: {

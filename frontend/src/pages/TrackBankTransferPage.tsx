@@ -22,7 +22,7 @@ export function TrackBankTransferPage() {
   const lookup = async (rawRef: string) => {
     const reference = rawRef.trim().toUpperCase();
     if (!reference) {
-      setError('Enter the reference from your bank transfer instructions (e.g. BF-XXXX).');
+      setError('Enter the reference from your bank transfer instructions (starts with BF-).');
       setIntent(null);
       return;
     }
@@ -129,7 +129,10 @@ export function TrackBankTransferPage() {
               type="text"
               value={referenceInput}
               onChange={(e) => setReferenceInput(e.target.value.toUpperCase())}
-              placeholder="e.g. BF-AB12CD34"
+              placeholder="e.g. BF-H7K9M2…"
+              autoComplete="off"
+              spellCheck={false}
+              className="flex-1 min-w-0 rounded-xl border border-surface-200 px-4 py-3 font-mono text-sm tracking-wide"
               autoComplete="off"
               spellCheck={false}
               className="mt-1.5 w-full rounded-xl border-2 border-surface-200 px-3 py-2.5 font-mono text-sm uppercase tracking-wide focus:border-brand-500 focus:ring-0 outline-none"
