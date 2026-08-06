@@ -25,7 +25,11 @@ import {
   EasypayAmountMismatchError,
   parseGmdTotalCents
 } from '../lib/finalizeEasypayIntent.js';
-import { extractEasypayPaymentMetadata, easypayPartnerPayloadIndicatesPaymentIncomplete } from '../lib/easypayPartnerPayload.js';
+import {
+  extractEasypayPaymentMetadata,
+  easypayPartnerPayloadIndicatesPaid,
+  easypayPartnerPayloadIndicatesPaymentIncomplete
+} from '../lib/easypayPartnerPayload.js';
 import { roundMoney } from '../lib/money.js';
 
 export const easypayPaymentsRouter = Router();
@@ -316,26 +320,59 @@ easypayPaymentsRouter.post(
       });
 
       const meta = extractEasypayPaymentMetadata(data);
-      const paymentId = meta.paymentId;
-      const ledgerAmountFromBody: unknown = meta.amount;
+      const looksPaid = easypayPartnerPayloadIndicatesPaid(data);
+      const incomplete = easypayPartnerPayloadIndicatesPaymentIncomplete(data);
+      const chargeTotal = roundMoney(intent.amount + intent.platformTipAmount);
+
+      // Easypay APS often returns `{ paid: true, amount, apsPaymentReference }` without paymentId.
+      // When partner explicitly marks paid after OUR complete call, fall back to intent totals.
+      // Never credit from bare HTTP 200 alone.
+      let paymentId = meta.paymentId;
+      let ledgerAmount: unknown = meta.amount;
+      if (looksPaid && !incomplete) {
+        if (!paymentId) {
+          paymentId = `epay-aps:${intent.partnerExternalBookingId}:${intent.easypayOrderId}`;
+        }
+        if (parseGmdTotalCents(ledgerAmount) === null) {
+          ledgerAmount = chargeTotal;
+        }
+      }
+
       const stillUnpaid = await prisma.easypayPaymentIntent.findUnique({
         where: { id: intent.id },
         select: { donationId: true }
       });
-      if (!stillUnpaid?.donationId && (!paymentId || parseGmdTotalCents(ledgerAmountFromBody) === null)) {
-        console.warn(
-          '[easypay] APS complete: missing paymentId or amount — not finalizing (wait for webhook)',
-          {
-            partnerExternalBookingId: intent.partnerExternalBookingId,
-            hasPaymentId: Boolean(paymentId),
-            hasAmount: parseGmdTotalCents(ledgerAmountFromBody) !== null,
-            incomplete: easypayPartnerPayloadIndicatesPaymentIncomplete(data)
-          }
-        );
-      } else if (paymentId && !stillUnpaid?.donationId) {
+
+      const hasLedgerFields =
+        Boolean(paymentId) && parseGmdTotalCents(ledgerAmount) !== null;
+      const shouldCredit =
+        !stillUnpaid?.donationId &&
+        !incomplete &&
+        hasLedgerFields &&
+        (looksPaid ||
+          (Boolean(meta.paymentId) && parseGmdTotalCents(meta.amount) !== null));
+
+      if (!shouldCredit) {
+        if (!stillUnpaid?.donationId) {
+          console.warn(
+            '[easypay] APS complete: not finalizing (wait for webhook / status reconcile)',
+            {
+              partnerExternalBookingId: intent.partnerExternalBookingId,
+              hasPaymentId: Boolean(meta.paymentId),
+              hasAmount: parseGmdTotalCents(meta.amount) !== null,
+              looksPaid,
+              incomplete,
+              responseKeys:
+                data && typeof data === 'object' && !Array.isArray(data)
+                  ? Object.keys(data as object).slice(0, 40)
+                  : typeof data
+            }
+          );
+        }
+      } else {
         try {
           await prisma.easypayWebhookReceipt.create({
-            data: { paymentId, event: 'payment.completed' }
+            data: { paymentId: paymentId!, event: 'payment.completed' }
           });
         } catch (e) {
           if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) {
@@ -345,8 +382,8 @@ easypayPaymentsRouter.post(
         try {
           await finalizeEasypayIntentPaid({
             intent,
-            webhookPaymentId: paymentId,
-            grossAmountFromWebhook: ledgerAmountFromBody
+            webhookPaymentId: paymentId!,
+            grossAmountFromWebhook: ledgerAmount
           });
         } catch (finalizeErr) {
           if (finalizeErr instanceof EasypayAmountMismatchError) {

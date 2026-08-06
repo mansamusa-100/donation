@@ -6,6 +6,7 @@ import { serializeCampaign } from './serializers.js';
 import { tryFinalizeCampaignEnded } from './campaignLifecycle.js';
 import { sendDonationThankYouEmail } from './mail.js';
 import { easypayCreateOrder, EasypayPartnerApiError } from './easypayPartner.js';
+import { partnerCreateOrderErrorIndicatesAlreadyPaid } from './easypayPartnerPayload.js';
 import { roundMoney } from './money.js';
 import { lockEasypayPaymentIntentForUpdate } from './paymentIntentLock.js';
 
@@ -277,15 +278,24 @@ export async function reconcileEasypayIntentIfPaid(
       }
     }
   } catch (err) {
-    // Never infer "paid" from HTTP 409 or loose error-body substrings (free-credit vector).
-    // Missed webhooks are recovered only when create-order returns an explicit paid status + amount,
-    // or when the signed webhook / APS complete path supplies a verified amount.
     if (err instanceof EasypayPartnerApiError) {
-      console.warn('[easypay] reconcile create-order failed — not treating as paid', {
-        partnerExternalBookingId: intent.partnerExternalBookingId,
-        status: err.status,
-        message: err.message.slice(0, 300)
-      });
+      // Bare 409 is NOT enough (security). Exact partner copy
+      // "This partner booking is already paid." is a trusted signal for this booking id.
+      if (partnerCreateOrderErrorIndicatesAlreadyPaid(err)) {
+        shouldFinalize = true;
+        orderAmount = chargeTotal;
+        reconcilePaymentId = `epay-reconcile-already-paid:${intent.partnerExternalBookingId}`;
+        console.info('[easypay] reconcile: partner reports booking already paid', {
+          partnerExternalBookingId: intent.partnerExternalBookingId,
+          status: err.status
+        });
+      } else {
+        console.warn('[easypay] reconcile create-order failed — not treating as paid', {
+          partnerExternalBookingId: intent.partnerExternalBookingId,
+          status: err.status,
+          message: err.message.slice(0, 300)
+        });
+      }
     } else {
       console.warn('[easypay] reconcile error', err);
     }
