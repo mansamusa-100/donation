@@ -13,6 +13,7 @@ import {
   generalRateLimiter,
   helmetMiddleware
 } from './middleware/security.js';
+import { accessLogMiddleware } from './middleware/accessLog.js';
 import { campaignsRouter } from './routes/campaigns.js';
 import { categoriesRouter } from './routes/categories.js';
 import { healthRouter } from './routes/health.js';
@@ -32,6 +33,7 @@ import { getUploadsRoot } from './lib/uploadPaths.js';
 export const app = express();
 
 configureTrustProxy(app);
+app.use(accessLogMiddleware);
 app.use(helmetMiddleware);
 app.use(generalRateLimiter);
 app.use(
