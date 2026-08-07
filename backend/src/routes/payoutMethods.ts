@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { Prisma } from '@prisma/client';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, AuthRequest } from '../lib/auth.js';
+import { authenticate, requireEmailVerified, AuthRequest } from '../lib/auth.js';
 import {
   createPayoutMethodSchema,
   serializePayoutMethod,
@@ -44,6 +44,7 @@ payoutMethodsRouter.get(
 
 payoutMethodsRouter.post(
   '/',
+  requireEmailVerified,
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = req.userId;
     if (!userId) {
@@ -78,6 +79,7 @@ payoutMethodsRouter.post(
 
 payoutMethodsRouter.patch(
   '/:id',
+  requireEmailVerified,
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = req.userId;
     if (!userId) {
@@ -121,6 +123,7 @@ payoutMethodsRouter.patch(
 
 payoutMethodsRouter.delete(
   '/:id',
+  requireEmailVerified,
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = req.userId;
     if (!userId) {

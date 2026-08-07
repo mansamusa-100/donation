@@ -208,6 +208,20 @@ export const api = {
     });
   },
 
+  verifyEmail(token: string) {
+    return request<{ user: User; message?: string }>('/api/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token })
+    });
+  },
+
+  resendEmailVerification() {
+    return request<{ message: string; alreadyVerified?: boolean }>('/api/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  },
+
   getStats() {
     return request<PlatformStats>('/api/stats');
   },

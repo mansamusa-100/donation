@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { Footer } from './components/Footer';
 import { Navbar } from './components/Navbar';
+import { EmailVerificationBanner } from './components/EmailVerificationBanner';
 import { RouteLoader } from './components/RouteLoader';
 import { HomePage } from './pages/HomePage';
 
@@ -31,6 +32,10 @@ const ForgotPasswordPage = lazy(async () => ({
 
 const ResetPasswordPage = lazy(async () => ({
   default: (await import('./pages/ResetPasswordPage')).ResetPasswordPage
+}));
+
+const VerifyEmailPage = lazy(async () => ({
+  default: (await import('./pages/VerifyEmailPage')).VerifyEmailPage
 }));
 
 const DashboardPage = lazy(async () => ({
@@ -120,6 +125,7 @@ function AppChrome() {
           : 'flex flex-col min-h-screen font-body text-surface-900 bg-surface-50'
       }>
       {!isAdminShell && <Navbar />}
+      {!isAdminShell && <EmailVerificationBanner />}
       <main className={isAdminShell ? 'min-h-screen' : 'flex-grow'}>
         <Suspense fallback={<RouteLoader />}>
           <Routes>
@@ -131,6 +137,7 @@ function AppChrome() {
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/payment/wave/return" element={<PaymentWaveReturnPage />} />

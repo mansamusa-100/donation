@@ -43,7 +43,8 @@ export async function ensurePlatformOwner(): Promise<void> {
         fullName,
         role: 'ADMIN',
         isActive: true,
-        adminPanelPermissions: []
+        adminPanelPermissions: [],
+        emailVerifiedAt: new Date()
       }
     });
     console.log(`[owner] Created platform owner admin: ${email}`);
@@ -72,6 +73,7 @@ export async function ensurePlatformOwner(): Promise<void> {
     password?: string;
     tokenVersion?: number;
     email?: string;
+    emailVerifiedAt?: Date;
   } = {};
 
   if (existing.email !== email) {
@@ -85,6 +87,9 @@ export async function ensurePlatformOwner(): Promise<void> {
   if (!existing.isActive || existing.accountClosedAt) {
     data.isActive = true;
     data.accountClosedAt = null;
+  }
+  if (!existing.emailVerifiedAt) {
+    data.emailVerifiedAt = new Date();
   }
   if (fullName && existing.fullName !== fullName) {
     data.fullName = fullName;

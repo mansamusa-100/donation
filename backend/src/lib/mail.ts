@@ -686,6 +686,34 @@ export async function sendPasswordResetEmail(params: {
   }
 }
 
+export async function sendEmailVerificationEmail(params: {
+  to: string;
+  fullName: string;
+  verifyUrl: string;
+}): Promise<void> {
+  const subject = 'Confirm your BarakahFund email';
+  try {
+    await sendBrandedEmail({
+      to: params.to,
+      subject,
+      content: brandedShell({
+        preheader: 'Confirm your email to create campaigns and manage payouts.',
+        eyebrow: 'Verify email',
+        title: 'Confirm your email address',
+        greeting: `Hi ${params.fullName},`,
+        paragraphs: [
+          'Thanks for joining BarakahFund. Please confirm this email address so we know it’s yours.',
+          'You can browse and donate right away. To create a campaign or manage payouts, verify your email with the button below (valid for 24 hours).'
+        ],
+        ctas: [{ label: 'Verify email', href: params.verifyUrl }],
+        note: `Or paste this link into your browser:\n${params.verifyUrl}`
+      })
+    });
+  } catch (err) {
+    console.error('[mail] sendEmailVerificationEmail', err);
+  }
+}
+
 export async function notifyAdminsCampaignSubmitted(params: {
   title: string;
   slug: string;

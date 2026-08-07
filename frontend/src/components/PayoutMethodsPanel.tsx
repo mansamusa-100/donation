@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { PlusIcon, Trash2Icon, StarIcon } from 'lucide-react';
 import { api } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import type {
   BankPayoutDetails,
   CashPayoutDetails,
@@ -13,6 +15,8 @@ import type {
 const WALLET_PROVIDERS: WalletProvider[] = ['Wave', 'APS', 'Yonna', 'Other'];
 
 export function PayoutMethodsPanel({ onUpdated }: { onUpdated?: () => void }) {
+  const { user } = useAuth();
+  const emailVerified = user?.emailVerified !== false;
   const [methods, setMethods] = useState<UserPayoutMethod[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState('');
@@ -142,12 +146,21 @@ export function PayoutMethodsPanel({ onUpdated }: { onUpdated?: () => void }) {
         <button
           type="button"
           onClick={() => setShowForm((v) => !v)}
-          disabled={busy}
+          disabled={busy || !emailVerified}
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-bold hover:bg-brand-700 disabled:opacity-50">
           <PlusIcon className="w-4 h-4" />
           {showForm ? 'Cancel' : 'Add method'}
         </button>
       </div>
+
+      {!emailVerified && (
+        <p className="text-sm text-amber-900 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-4">
+          Verify your email to add or change payout methods.{' '}
+          <Link to="/verify-email" className="font-bold underline hover:no-underline">
+            Confirm email
+          </Link>
+        </p>
+      )}
 
       {error && (
         <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-4">
@@ -155,7 +168,7 @@ export function PayoutMethodsPanel({ onUpdated }: { onUpdated?: () => void }) {
         </p>
       )}
 
-      {showForm && (
+      {showForm && emailVerified && (
         <form onSubmit={(e) => void handleAdd(e)} className="mb-6 p-4 rounded-xl border border-surface-200 bg-surface-50 space-y-4">
           <div className="flex flex-wrap gap-2">
             {(['Wallet', 'Bank', 'Cash'] as PayoutMethodType[]).map((t) => (

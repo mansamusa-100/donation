@@ -55,12 +55,16 @@ export function RegisterPage() {
 
     setLoading(true);
     try {
-      await register(
+      const registered = await register(
         formData.email,
         formData.password,
         formData.name,
         formData.phone || undefined
       );
+      if (!registered.emailVerified) {
+        navigate('/verify-email', { replace: true });
+        return;
+      }
       const from = (location.state as { from?: { pathname: string } })?.from?.pathname;
       navigate(from ?? '/dashboard');
     } catch (err) {

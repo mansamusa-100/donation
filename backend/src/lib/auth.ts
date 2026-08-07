@@ -181,6 +181,40 @@ export function requireAuth(
   });
 }
 
+/** Soft gate: organizer / payout actions require a confirmed email. */
+export async function requireEmailVerified(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  if (!req.userId) {
+    res.status(401).json({ message: 'Authentication required' });
+    return;
+  }
+  // Admins are not campaign organizers; skip for admin-only tooling.
+  if (req.userRole === 'ADMIN') {
+    next();
+    return;
+  }
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { emailVerifiedAt: true }
+    });
+    if (!user?.emailVerifiedAt) {
+      res.status(403).json({
+        message:
+          'Please verify your email address before doing this. Check your inbox for a confirmation link, or resend it from your account.',
+        code: 'EMAIL_NOT_VERIFIED'
+      });
+      return;
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** Sets `userId` / `userRole` when a valid Bearer token is present; otherwise continues without error. */
 export async function optionalAuthenticate(
   req: AuthRequest,

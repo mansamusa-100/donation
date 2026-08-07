@@ -1,5 +1,5 @@
-import { useState, type InputHTMLAttributes, type LucideIcon } from 'react';
-import { Eye, EyeOff, Lock } from 'lucide-react';
+import { useState, type InputHTMLAttributes } from 'react';
+import { Eye, EyeOff, Lock, type LucideIcon } from 'lucide-react';
 
 type PasswordInputProps = Omit<
   InputHTMLAttributes<HTMLInputElement>,

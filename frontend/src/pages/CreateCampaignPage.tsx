@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   FileText,
   Image as ImageIcon,
+  MailIcon,
   Shield,
   Target,
   X
@@ -409,6 +410,30 @@ export function CreateCampaignPage() {
 
   if (isAuthenticated && user?.role === 'ADMIN') {
     return <Navigate to="/admin" replace />;
+  }
+
+  if (isAuthenticated && user && user.emailVerified === false) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center px-4 py-16">
+        <div className="max-w-md w-full rounded-2xl border border-surface-200 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-800">
+            <MailIcon className="h-7 w-7" />
+          </div>
+          <h1 className="font-display text-2xl font-bold text-surface-900 mb-2">
+            Verify your email first
+          </h1>
+          <p className="text-sm text-surface-600 mb-6">
+            Confirm <span className="font-semibold">{user.email}</span> to create a campaign on {BRAND_NAME}.
+            You can still explore and donate while you wait.
+          </p>
+          <Link
+            to="/verify-email"
+            className="inline-flex rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-brand-700">
+            Verify email
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   const { shortDescription, fullDescription, daysLeft } = computeDerived();

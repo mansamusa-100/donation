@@ -7,5 +7,7 @@ export interface User {
   avatarUrl?: string | null;
   isActive?: boolean;
   createdAt?: string;
+  /** False until the user confirms email (Google accounts are verified). */
+  emailVerified?: boolean;
   adminPanelPermissions?: string[];
 }

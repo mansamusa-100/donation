@@ -1144,7 +1144,8 @@ adminRouter.post(
         phoneNumber: body.phoneNumber?.trim() || null,
         password: passwordHash,
         role: 'ADMIN',
-        adminPanelPermissions: body.adminPanelPermissions
+        adminPanelPermissions: body.adminPanelPermissions,
+        emailVerifiedAt: new Date()
       },
       select: {
         id: true,

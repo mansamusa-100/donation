@@ -15,7 +15,7 @@ import {
 import { setAuthCookie, clearAuthCookie } from '../lib/authCookies.js';
 import { env } from '../config/env.js';
 import { HttpError } from '../lib/HttpError.js';
-import { sendPasswordResetEmail, sendWelcomeEmail } from '../lib/mail.js';
+import { sendEmailVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../lib/mail.js';
 import {
   closeUserAccount,
   getAccountCloseBlockers
@@ -29,6 +29,11 @@ import {
   createPasswordResetToken,
   hashPasswordResetToken
 } from '../lib/passwordResetToken.js';
+import {
+  createEmailVerificationToken,
+  emailVerificationExpiresAt,
+  hashEmailVerificationToken
+} from '../lib/emailVerification.js';
 import { normalizeEmail } from '../lib/normalizeEmail.js';
 
 const authRouter = Router();
@@ -58,6 +63,10 @@ const googleAuthSchema = z.object({
   credential: z.string().min(10, 'Missing Google credential')
 });
 
+const verifyEmailSchema = z.object({
+  token: z.string().min(10, 'Invalid verification link')
+});
+
 const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID || undefined);
 
 function serializeAuthUser(user: {
@@ -66,14 +75,38 @@ function serializeAuthUser(user: {
   fullName: string;
   role: 'ADMIN' | 'USER';
   adminPanelPermissions: string[];
+  emailVerifiedAt?: Date | null;
 }) {
   return {
     id: user.id,
     email: user.email,
     fullName: user.fullName,
     role: user.role,
+    emailVerified: user.emailVerifiedAt != null,
     adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
   };
+}
+
+async function issueEmailVerification(user: {
+  id: string;
+  email: string;
+  fullName: string;
+}): Promise<void> {
+  const token = createEmailVerificationToken();
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      emailVerificationToken: hashEmailVerificationToken(token),
+      emailVerificationExpires: emailVerificationExpiresAt()
+    }
+  });
+  const base = env.CLIENT_ORIGIN.replace(/\/$/, '');
+  const verifyUrl = `${base}/verify-email?token=${encodeURIComponent(token)}`;
+  void sendEmailVerificationEmail({
+    to: user.email,
+    fullName: user.fullName,
+    verifyUrl
+  });
 }
 
 function startSession(
@@ -157,13 +190,16 @@ authRouter.post(
     }
 
     const hashedPassword = await hashPassword(body.password);
+    const verifyToken = createEmailVerificationToken();
 
     const user = await prisma.user.create({
       data: {
         email,
         password: hashedPassword,
         fullName: body.fullName,
-        phoneNumber: body.phoneNumber
+        phoneNumber: body.phoneNumber,
+        emailVerificationToken: hashEmailVerificationToken(verifyToken),
+        emailVerificationExpires: emailVerificationExpiresAt()
       },
       select: {
         id: true,
@@ -171,13 +207,28 @@ authRouter.post(
         fullName: true,
         role: true,
         adminPanelPermissions: true,
-        tokenVersion: true
+        tokenVersion: true,
+        emailVerifiedAt: true
       }
     });
 
-    void sendWelcomeEmail({ to: user.email, fullName: user.fullName });
+    const base = env.CLIENT_ORIGIN.replace(/\/$/, '');
+    const verifyUrl = `${base}/verify-email?token=${encodeURIComponent(verifyToken)}`;
+    void sendEmailVerificationEmail({
+      to: user.email,
+      fullName: user.fullName,
+      verifyUrl
+    });
 
-    startSession(res, user, { user: serializeAuthUser(user) }, 201);
+    startSession(
+      res,
+      user,
+      {
+        user: serializeAuthUser(user),
+        emailVerificationRequired: true
+      },
+      201
+    );
   })
 );
 
@@ -267,7 +318,8 @@ authRouter.post(
         password: true,
         isActive: true,
         adminPanelPermissions: true,
-        tokenVersion: true
+        tokenVersion: true,
+        emailVerifiedAt: true
       }
     });
 
@@ -296,7 +348,10 @@ authRouter.post(
       return;
     }
 
-    startSession(res, user, { user: serializeAuthUser(user) });
+    startSession(res, user, {
+      user: serializeAuthUser(user),
+      emailVerificationRequired: user.emailVerifiedAt == null
+    });
   })
 );
 
@@ -365,7 +420,18 @@ authRouter.post(
           email,
           fullName: payload.name?.trim() || email.split('@')[0],
           googleId: payload.sub,
-          avatarUrl
+          avatarUrl,
+          emailVerifiedAt: new Date()
+        }
+      });
+    } else if (!user.emailVerifiedAt) {
+      // Returning Google users with verified Google email — mark verified.
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          emailVerifiedAt: new Date(),
+          emailVerificationToken: null,
+          emailVerificationExpires: null
         }
       });
     }
@@ -386,6 +452,84 @@ authRouter.post(
   })
 );
 
+authRouter.post(
+  '/verify-email',
+  asyncHandler(async (req, res) => {
+    const body = verifyEmailSchema.parse(req.body);
+    const user = await prisma.user.findFirst({
+      where: {
+        emailVerificationToken: hashEmailVerificationToken(body.token),
+        emailVerificationExpires: { gt: new Date() }
+      }
+    });
+
+    if (!user) {
+      res.status(400).json({
+        message: 'This verification link is invalid or has expired. Request a new one from your account.'
+      });
+      return;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerifiedAt: new Date(),
+        emailVerificationToken: null,
+        emailVerificationExpires: null
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        adminPanelPermissions: true,
+        tokenVersion: true,
+        emailVerifiedAt: true
+      }
+    });
+
+    void sendWelcomeEmail({ to: updated.email, fullName: updated.fullName });
+
+    startSession(res, updated, {
+      user: serializeAuthUser(updated),
+      message: 'Your email is verified. Welcome to BarakahFund.'
+    });
+  })
+);
+
+authRouter.post(
+  '/resend-verification',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        emailVerifiedAt: true,
+        isActive: true
+      }
+    });
+
+    if (!user || !user.isActive) {
+      res.status(401).json({ message: 'Authentication required' });
+      return;
+    }
+
+    if (user.emailVerifiedAt) {
+      res.json({ message: 'Your email is already verified.', alreadyVerified: true });
+      return;
+    }
+
+    await issueEmailVerification(user);
+
+    res.json({
+      message: 'If this account needs verification, we sent a new confirmation link. Check your inbox.'
+    });
+  })
+);
+
 authRouter.get(
   '/me',
   authenticate,
@@ -401,7 +545,8 @@ authRouter.get(
         role: true,
         isActive: true,
         createdAt: true,
-        adminPanelPermissions: true
+        adminPanelPermissions: true,
+        emailVerifiedAt: true
       }
     });
 
@@ -419,6 +564,7 @@ authRouter.get(
       role: user.role,
       isActive: user.isActive,
       createdAt: user.createdAt,
+      emailVerified: user.emailVerifiedAt != null,
       adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
     });
   })

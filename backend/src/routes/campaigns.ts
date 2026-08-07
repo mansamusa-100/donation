@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { prisma } from '../lib/prisma.js';
 import { serializeCampaign, serializeDonation } from '../lib/serializers.js';
-import { authenticate, optionalAuthenticate, AuthRequest } from '../lib/auth.js';
+import { authenticate, optionalAuthenticate, requireEmailVerified, AuthRequest } from '../lib/auth.js';
 import { recordActivity } from '../lib/activityLog.js';
 import {
   notifyAdminsCampaignSubmitted,
@@ -366,6 +366,7 @@ campaignsRouter.get(
 campaignsRouter.post(
   '/withdrawal-requests',
   authenticate,
+  requireEmailVerified,
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = req.userId;
     if (!userId) {
@@ -578,6 +579,7 @@ campaignsRouter.get(
 campaignsRouter.post(
   '/:slug/confirm-end',
   authenticate,
+  requireEmailVerified,
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = req.userId;
     if (!userId) {
@@ -643,6 +645,7 @@ campaignsRouter.post(
 campaignsRouter.post(
   '/:slug/extension-requests',
   authenticate,
+  requireEmailVerified,
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = req.userId;
     if (!userId) {
@@ -726,6 +729,7 @@ campaignsRouter.post(
 campaignsRouter.post(
   '/',
   authenticate,
+  requireEmailVerified,
   asyncHandler(async (req: AuthRequest, res) => {
     if (req.userRole === 'ADMIN') {
       res.status(403).json({
