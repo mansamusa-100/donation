@@ -5,7 +5,7 @@ import {
   TwitterIcon,
   InstagramIcon } from
 'lucide-react';
-import { BRAND_LOGO_SRC, BRAND_NAME, BRAND_NAME_PRIMARY } from '../lib/brand';
+import { BRAND_LOGO_SRC, BRAND_NAME, BRAND_NAME_PRIMARY, SUPPORT_PHONES, SUPPORT_WHATSAPP, telHref, whatsappHref } from '../lib/brand';
 
 export function Footer() {
   const { user } = useAuth();
@@ -103,6 +103,23 @@ export function Footer() {
                 <Link to="/contact" className="hover:text-brand-400 transition-colors">
                   Contact Us
                 </Link>
+              </li>
+              {SUPPORT_PHONES.map((phone) => (
+                <li key={phone}>
+                  <a href={telHref(phone)} className="hover:text-brand-400 transition-colors">
+                    {phone}
+                  </a>
+                </li>
+              ))}
+              <li>
+                <a
+                  href={whatsappHref(SUPPORT_WHATSAPP)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:text-brand-400 transition-colors"
+                >
+                  WhatsApp {SUPPORT_WHATSAPP}
+                </a>
               </li>
             </ul>
           </div>

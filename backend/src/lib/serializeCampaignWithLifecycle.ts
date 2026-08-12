@@ -16,6 +16,7 @@ export async function serializeCampaignWithLifecycle(
   campaign: CampaignWithDonations,
   options?: {
     includeAdminInactive?: boolean;
+    includePrivateContact?: boolean;
     pendingExtension?: { id: string; requestedEndDate: string; status: string } | null;
   }
 ) {
@@ -34,7 +35,9 @@ export async function serializeCampaignWithLifecycle(
   }
 
   return {
-    ...serializeCampaign(campaign),
+    ...serializeCampaign(campaign, {
+      includePrivateContact: options?.includePrivateContact
+    }),
     ...buildCampaignLifecycleMeta(campaign, balances, {
       lastDonationAt,
       inactive60Days,

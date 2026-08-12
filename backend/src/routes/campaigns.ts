@@ -38,6 +38,7 @@ import { serializeCampaignWithLifecycle } from '../lib/serializeCampaignWithLife
 import { serializeWithdrawalPayout } from '../lib/payoutMethods.js';
 import { expireStaleBankTransferIntents } from '../lib/expireBankTransfers.js';
 import { serializeBankTransferIntent } from '../lib/bankTransferSerialize.js';
+import { isValidContactPhone, normalizeContactPhone } from '../lib/contactPhone.js';
 import { serializePlatformBankAccount } from '../lib/platformBankAccountSerialize.js';
 import { isOwnedVerificationDocumentUrl } from '../lib/processRasterUpload.js';
 
@@ -62,6 +63,12 @@ const coverImageSchema = z.string().refine(
   { message: 'Cover must be a valid image URL or an uploaded file path' }
 );
 
+const optionalContactPhone = z
+  .string()
+  .max(32)
+  .nullish()
+  .transform((v) => normalizeContactPhone(v ?? null));
+
 const createCampaignSchema = z
   .object({
     title: z.string().min(5).max(120),
@@ -75,12 +82,15 @@ const createCampaignSchema = z
     coverImage: coverImageSchema,
     galleryImages: z.array(coverImageSchema).max(4).optional().default([]),
     verificationDocumentUrl: z
-    .string()
-    .min(1)
-    .refine((s) => s.startsWith('/uploads/verification-ids/'), {
-      message: 'ID verification document must be uploaded'
-    }),
-  termsAcceptedAt: z.string().datetime()
+      .string()
+      .min(1)
+      .refine((s) => s.startsWith('/uploads/verification-ids/'), {
+        message: 'ID verification document must be uploaded'
+      }),
+    termsAcceptedAt: z.string().datetime(),
+    showPublicContact: z.boolean().optional().default(false),
+    contactPhone: optionalContactPhone,
+    contactWhatsApp: optionalContactPhone
   })
   .superRefine((data, ctx) => {
     const extras = data.galleryImages ?? [];
@@ -102,6 +112,58 @@ const createCampaignSchema = z
         return;
       }
       seen.add(url);
+    }
+
+    if (data.contactPhone && !isValidContactPhone(data.contactPhone)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Enter a valid phone number (include country code, e.g. +220…)',
+        path: ['contactPhone']
+      });
+    }
+    if (data.contactWhatsApp && !isValidContactPhone(data.contactWhatsApp)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Enter a valid WhatsApp number (include country code, e.g. +220…)',
+        path: ['contactWhatsApp']
+      });
+    }
+    if (data.showPublicContact && !data.contactPhone && !data.contactWhatsApp) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Add a phone or WhatsApp number to show contact details publicly.',
+        path: ['showPublicContact']
+      });
+    }
+  });
+
+const updateCampaignContactSchema = z
+  .object({
+    showPublicContact: z.boolean(),
+    contactPhone: optionalContactPhone,
+    contactWhatsApp: optionalContactPhone
+  })
+  .superRefine((data, ctx) => {
+    if (data.contactPhone && !isValidContactPhone(data.contactPhone)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Enter a valid phone number (include country code, e.g. +220…)',
+        path: ['contactPhone']
+      });
+    }
+    if (data.contactWhatsApp && !isValidContactPhone(data.contactWhatsApp)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Enter a valid WhatsApp number (include country code, e.g. +220…)',
+        path: ['contactWhatsApp']
+      });
+    }
+    if (data.showPublicContact && !data.contactPhone && !data.contactWhatsApp) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Add a phone or WhatsApp number to show contact details publicly.',
+        path: ['showPublicContact']
+      });
     }
   });
 
@@ -312,7 +374,8 @@ campaignsRouter.get(
     const serializedCampaigns = await Promise.all(
       campaigns.map((c) =>
         serializeCampaignWithLifecycle(c, {
-          pendingExtension: extByCampaign.get(c.id) ?? null
+          pendingExtension: extByCampaign.get(c.id) ?? null,
+          includePrivateContact: true
         })
       )
     );
@@ -576,6 +639,57 @@ campaignsRouter.get(
   })
 );
 
+campaignsRouter.patch(
+  '/:slug/contact',
+  authenticate,
+  requireEmailVerified,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ message: 'Authentication required' });
+      return;
+    }
+
+    const body = updateCampaignContactSchema.parse(req.body);
+    const campaign = await prisma.campaign.findUnique({
+      where: { slug: String(req.params.slug) },
+      select: { id: true, creatorId: true, status: true }
+    });
+
+    if (!campaign) {
+      res.status(404).json({ message: 'Campaign not found' });
+      return;
+    }
+    if (campaign.creatorId !== userId) {
+      res.status(403).json({ message: 'Only the campaign organizer can update contact details.' });
+      return;
+    }
+    if (campaign.status === 'Closed' || campaign.status === 'Rejected') {
+      res.status(400).json({ message: 'Contact details cannot be updated for this campaign.' });
+      return;
+    }
+
+    const updated = await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        showPublicContact: body.showPublicContact,
+        contactPhone: body.contactPhone,
+        contactWhatsApp: body.contactWhatsApp
+      },
+      include: {
+        donations: {
+          orderBy: { createdAt: 'desc' },
+          take: 5
+        }
+      }
+    });
+
+    res.json(
+      await serializeCampaignWithLifecycle(updated, { includePrivateContact: true })
+    );
+  })
+);
+
 campaignsRouter.post(
   '/:slug/confirm-end',
   authenticate,
@@ -791,6 +905,9 @@ campaignsRouter.post(
         galleryImages,
         verificationDocumentUrl: body.verificationDocumentUrl,
         termsAcceptedAt: new Date(body.termsAcceptedAt),
+        showPublicContact: body.showPublicContact,
+        contactPhone: body.contactPhone,
+        contactWhatsApp: body.contactWhatsApp,
         status: 'PendingReview',
         creatorId: userId
       },

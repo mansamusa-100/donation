@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ShieldCheckIcon, UsersIcon, ClockIcon, HeartIcon } from 'lucide-react';
+import { ShieldCheckIcon, UsersIcon, ClockIcon, HeartIcon, PhoneIcon, MessageCircleIcon } from 'lucide-react';
 import { ProgressBar } from '../components/ProgressBar';
 import { CategoryBadge } from '../components/CategoryBadge';
 import { ShareButtons } from '../components/ShareButtons';
@@ -13,6 +13,7 @@ import { toUserFriendlyError } from '../lib/userFriendlyError';
 import type { Campaign } from '../types/campaign';
 import { mediaUrl } from '../lib/mediaUrl';
 import { api } from '../lib/api';
+import { telHref, whatsappHref, BRAND_NAME } from '../lib/brand';
 
 export function CampaignDetailPage() {
   const { slug } = useParams();
@@ -158,20 +159,49 @@ export function CampaignDetailPage() {
                 </div>
               </div>
             )}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-surface-200 flex items-center gap-4">
-              <Avatar
-                name={campaign.creatorName}
-                src={campaign.creatorAvatar}
-                sizeClassName="w-14 h-14"
-                textClassName="text-lg"
-              />
-              <div>
-                <p className="text-sm text-surface-500">Campaign Organizer</p>
-                <h3 className="font-bold text-surface-900 text-lg">{campaign.creatorName}</h3>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-surface-200">
+              <div className="flex items-center gap-4">
+                <Avatar
+                  name={campaign.creatorName}
+                  src={campaign.creatorAvatar}
+                  sizeClassName="w-14 h-14"
+                  textClassName="text-lg"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-surface-500">Campaign Organizer</p>
+                  <h3 className="font-bold text-surface-900 text-lg truncate">{campaign.creatorName}</h3>
+                </div>
+                <div className="hidden sm:flex items-center gap-2 text-brand-600 bg-brand-50 px-3 py-1.5 rounded-lg text-sm font-semibold shrink-0">
+                  <ShieldCheckIcon className="w-4 h-4" /> Verified
+                </div>
               </div>
-              <div className="ml-auto hidden sm:flex items-center gap-2 text-brand-600 bg-brand-50 px-3 py-1.5 rounded-lg text-sm font-semibold">
-                <ShieldCheckIcon className="w-4 h-4" /> Verified
-              </div>
+              {campaign.showPublicContact && (campaign.contactPhone || campaign.contactWhatsApp) && (
+                <div className="mt-4 pt-4 border-t border-surface-100 flex flex-wrap gap-2">
+                  {campaign.contactPhone && (
+                    <a
+                      href={telHref(campaign.contactPhone)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-surface-200 bg-surface-50 px-3.5 py-2 text-sm font-semibold text-surface-800 hover:border-brand-300 hover:bg-brand-50 transition-colors"
+                    >
+                      <PhoneIcon className="w-4 h-4 text-brand-600" />
+                      Call {campaign.contactPhone}
+                    </a>
+                  )}
+                  {campaign.contactWhatsApp && (
+                    <a
+                      href={whatsappHref(
+                        campaign.contactWhatsApp,
+                        `Hi, I have a question about your ${BRAND_NAME} campaign: ${campaign.title}`
+                      )}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-xl border border-[#25D366]/30 bg-[#25D366]/10 px-3.5 py-2 text-sm font-semibold text-surface-800 hover:bg-[#25D366]/20 transition-colors"
+                    >
+                      <MessageCircleIcon className="w-4 h-4 text-[#128C7E]" />
+                      WhatsApp
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-surface-200 overflow-hidden">

@@ -101,6 +101,10 @@ export interface Campaign {
   isTrending?: boolean;
   status?: CampaignStatus;
   createdAt?: string;
+  /** Organizer opted to show inquiry phone / WhatsApp on the public page. */
+  showPublicContact?: boolean;
+  contactPhone?: string | null;
+  contactWhatsApp?: string | null;
   recentDonors: Donor[];
   /** Present on creator dashboard / detail when lifecycle fields are included. */
   availableForWithdrawal?: number;

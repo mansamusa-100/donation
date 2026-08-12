@@ -142,7 +142,10 @@ async function endOrganizerCampaigns(tx: Prisma.TransactionClient, userId: strin
         where: { id: campaign.id },
         data: {
           ownerConfirmedEndAt: campaign.ownerConfirmedEndAt ?? now,
-          status: 'Closed'
+          status: 'Closed',
+          showPublicContact: false,
+          contactPhone: null,
+          contactWhatsApp: null
         }
       });
       const finalized = await tryFinalizeCampaignEnded(tx, campaign.id);
@@ -164,7 +167,12 @@ async function endOrganizerCampaigns(tx: Prisma.TransactionClient, userId: strin
     } else {
       await tx.campaign.update({
         where: { id: campaign.id },
-        data: { status: 'Closed' }
+        data: {
+          status: 'Closed',
+          showPublicContact: false,
+          contactPhone: null,
+          contactWhatsApp: null
+        }
       });
       endedCount += 1;
 

@@ -457,6 +457,18 @@ export function DashboardPage() {
                         onWithdraw={submitWithdrawal}
                         onConfirmEnd={handleConfirmEnd}
                         onRequestExtension={handleRequestExtension}
+                        onContactSaved={(updated) => {
+                          setData((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  campaigns: prev.campaigns.map((row) =>
+                                    row.id === updated.id ? { ...row, ...updated } : row
+                                  )
+                                }
+                              : prev
+                          );
+                        }}
                       />
                     ))}
                   </div>
@@ -613,6 +625,7 @@ function CampaignRow({
   onWithdraw,
   onConfirmEnd,
   onRequestExtension,
+  onContactSaved,
   busy
 }: {
   campaign: Campaign;
@@ -620,6 +633,7 @@ function CampaignRow({
   onWithdraw: (slug: string, amount: number, payoutMethodId: string, note: string) => Promise<void>;
   onConfirmEnd: (slug: string) => Promise<void>;
   onRequestExtension: (slug: string, endDate: string, reason: string) => Promise<void>;
+  onContactSaved: (campaign: Campaign) => void;
   busy: boolean;
 }) {
   const [wAmount, setWAmount] = useState('');
@@ -630,6 +644,13 @@ function CampaignRow({
   const [extDate, setExtDate] = useState('');
   const [extReason, setExtReason] = useState('');
   const [showExtensionForm, setShowExtensionForm] = useState(false);
+  const [showContactForm, setShowContactForm] = useState(false);
+  const [contactPhone, setContactPhone] = useState(campaign.contactPhone ?? '');
+  const [contactWhatsApp, setContactWhatsApp] = useState(campaign.contactWhatsApp ?? '');
+  const [showPublicContact, setShowPublicContact] = useState(Boolean(campaign.showPublicContact));
+  const [contactBusy, setContactBusy] = useState(false);
+  const [contactError, setContactError] = useState('');
+  const [contactSaved, setContactSaved] = useState(false);
   const progress = Math.min(100, Math.round((campaign.raisedAmount / campaign.goalAmount) * 100));
   const status = campaign.status ?? 'Active';
   const available = campaign.availableForWithdrawal ?? 0;
@@ -640,12 +661,19 @@ function CampaignRow({
   const acceptingDonations = campaign.acceptingDonations !== false;
   const canConfirmEnd = campaign.canConfirmEnd === true;
   const pendingExtension = campaign.pendingExtension;
+  const canEditContact = status !== 'Closed' && status !== 'Rejected';
 
   useEffect(() => {
     if (!payoutMethodId && defaultMethodId) {
       setPayoutMethodId(defaultMethodId);
     }
   }, [defaultMethodId, payoutMethodId]);
+
+  useEffect(() => {
+    setContactPhone(campaign.contactPhone ?? '');
+    setContactWhatsApp(campaign.contactWhatsApp ?? '');
+    setShowPublicContact(Boolean(campaign.showPublicContact));
+  }, [campaign.contactPhone, campaign.contactWhatsApp, campaign.showPublicContact]);
 
   const handleWithdrawSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -659,6 +687,30 @@ function CampaignRow({
     await onWithdraw(campaign.slug, n, payoutMethodId, wNote.trim());
     setWAmount('');
     setWNote('');
+  };
+
+  const handleContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setContactError('');
+    setContactSaved(false);
+    if (showPublicContact && !contactPhone.trim() && !contactWhatsApp.trim()) {
+      setContactError('Add a phone or WhatsApp number to show contact details publicly.');
+      return;
+    }
+    setContactBusy(true);
+    try {
+      const updated = await api.updateCampaignContact(campaign.slug, {
+        showPublicContact,
+        contactPhone: contactPhone.trim() || null,
+        contactWhatsApp: contactWhatsApp.trim() || null
+      });
+      onContactSaved(updated);
+      setContactSaved(true);
+    } catch (err) {
+      setContactError(toUserFriendlyError(err, 'Could not update contact details.'));
+    } finally {
+      setContactBusy(false);
+    }
   };
 
   return (
@@ -723,8 +775,79 @@ function CampaignRow({
               Public page opens after approval
             </span>
           )}
+          {canEditContact && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowContactForm((v) => !v);
+                setContactError('');
+                setContactSaved(false);
+              }}
+              className="px-4 py-2 border border-surface-200 rounded-lg text-sm font-semibold text-center hover:bg-surface-50"
+            >
+              {showContactForm ? 'Hide contact settings' : 'Inquiry contact'}
+            </button>
+          )}
         </div>
       </div>
+
+      {showContactForm && canEditContact && (
+        <form
+          onSubmit={(e) => void handleContactSubmit(e)}
+          className="pl-0 sm:pl-24 border-t border-surface-100 pt-4 space-y-3"
+        >
+          <p className="text-xs text-surface-500">
+            Optional. When enabled, donors can call or WhatsApp you from the campaign page. Include country code
+            (e.g. +220…).
+          </p>
+          <label className="flex items-start gap-2 text-sm text-surface-800 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showPublicContact}
+              onChange={(e) => setShowPublicContact(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-surface-300 text-brand-600 focus:ring-brand-500"
+            />
+            Show contact details on the public campaign page
+          </label>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-surface-600 mb-1" htmlFor={`phone-${campaign.id}`}>
+                Mobile (call)
+              </label>
+              <input
+                id={`phone-${campaign.id}`}
+                type="tel"
+                value={contactPhone}
+                onChange={(e) => setContactPhone(e.target.value)}
+                placeholder="+220 4512233"
+                className="w-full px-3 py-2 border border-surface-200 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-surface-600 mb-1" htmlFor={`wa-${campaign.id}`}>
+                WhatsApp
+              </label>
+              <input
+                id={`wa-${campaign.id}`}
+                type="tel"
+                value={contactWhatsApp}
+                onChange={(e) => setContactWhatsApp(e.target.value)}
+                placeholder="+220 6612610"
+                className="w-full px-3 py-2 border border-surface-200 rounded-lg text-sm"
+              />
+            </div>
+          </div>
+          {contactError && <p className="text-xs text-red-600">{contactError}</p>}
+          {contactSaved && <p className="text-xs text-emerald-700">Contact details saved.</p>}
+          <button
+            type="submit"
+            disabled={contactBusy || busy}
+            className="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-50"
+          >
+            {contactBusy ? 'Saving…' : 'Save contact details'}
+          </button>
+        </form>
+      )}
 
       {status === 'Active' && (
         <div className="pl-0 sm:pl-24 border-t border-surface-100 pt-4 flex flex-wrap gap-2">

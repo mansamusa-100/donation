@@ -119,6 +119,12 @@ model Campaign {
   coverImage       String
   // Extra campaign photos (same rules as cover); max 4 + cover = 5 images total.
   galleryImages    String[]       @default([])
+  /// When true, contactPhone / contactWhatsApp are shown on the public campaign page.
+  showPublicContact Boolean       @default(false)
+  /// Optional public inquiry phone (organizer opt-in).
+  contactPhone     String?
+  /// Optional public WhatsApp number for inquiries (organizer opt-in).
+  contactWhatsApp  String?
   verificationDocumentUrl String?
   termsAcceptedAt         DateTime?
   isTrending       Boolean        @default(false)

@@ -48,7 +48,13 @@ export function serializeDonation(donation: Donation) {
   };
 }
 
-export function serializeCampaign(campaign: CampaignWithDonations) {
+export function serializeCampaign(
+  campaign: CampaignWithDonations,
+  options?: { includePrivateContact?: boolean }
+) {
+  const showPublic = Boolean(campaign.showPublicContact);
+  const revealContact = showPublic || Boolean(options?.includePrivateContact);
+
   return {
     id: campaign.id,
     slug: campaign.slug,
@@ -68,6 +74,9 @@ export function serializeCampaign(campaign: CampaignWithDonations) {
     isTrending: campaign.isTrending,
     status: campaign.status,
     createdAt: campaign.createdAt.toISOString(),
+    showPublicContact: showPublic,
+    contactPhone: revealContact ? campaign.contactPhone ?? null : null,
+    contactWhatsApp: revealContact ? campaign.contactWhatsApp ?? null : null,
     recentDonors: campaign.donations
       .sort((a: Donation, b: Donation) => b.createdAt.getTime() - a.createdAt.getTime())
       .map(serializeDonation)

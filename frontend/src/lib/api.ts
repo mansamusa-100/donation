@@ -42,6 +42,9 @@ interface ApiCreateCampaignInput {
   verificationDocumentUrl: string;
   /** ISO 8601 datetime when the organizer accepted the fee terms */
   termsAcceptedAt: string;
+  showPublicContact?: boolean;
+  contactPhone?: string | null;
+  contactWhatsApp?: string | null;
 }
 
 interface ApiCreateDonationInput {
@@ -332,6 +335,20 @@ export const api = {
   createCampaign(payload: ApiCreateCampaignInput) {
     return request<Campaign>('/api/campaigns', {
       method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  updateCampaignContact(
+    slug: string,
+    payload: {
+      showPublicContact: boolean;
+      contactPhone?: string | null;
+      contactWhatsApp?: string | null;
+    }
+  ) {
+    return request<Campaign>(`/api/campaigns/${encodeURIComponent(slug)}/contact`, {
+      method: 'PATCH',
       body: JSON.stringify(payload)
     });
   },

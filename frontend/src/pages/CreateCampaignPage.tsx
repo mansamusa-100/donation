@@ -60,7 +60,10 @@ export function CreateCampaignPage() {
     description: '',
     targetAmount: '',
     category: '' as '' | Category,
-    deadline: ''
+    deadline: '',
+    showPublicContact: false,
+    contactPhone: '',
+    contactWhatsApp: ''
   });
 
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
@@ -118,11 +121,33 @@ export function CreateCampaignPage() {
     }
   };
 
+  useEffect(() => {
+    if (!user?.phoneNumber) {
+      return;
+    }
+    setFormData((prev) => {
+      if (prev.contactPhone || prev.contactWhatsApp) {
+        return prev;
+      }
+      return {
+        ...prev,
+        contactPhone: user.phoneNumber ?? '',
+        contactWhatsApp: user.phoneNumber ?? ''
+      };
+    });
+  }, [user?.phoneNumber]);
+
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const checked = e.target instanceof HTMLInputElement && e.target.type === 'checkbox'
+      ? e.target.checked
+      : undefined;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: checked !== undefined ? checked : value
+    }));
   };
 
   const handleCoverFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -305,6 +330,13 @@ export function CreateCampaignPage() {
     if (startOfEnd < startToday) {
       return 'Campaign end date cannot be in the past.';
     }
+    if (formData.showPublicContact) {
+      const phone = formData.contactPhone.trim();
+      const wa = formData.contactWhatsApp.trim();
+      if (!phone && !wa) {
+        return 'Add a phone or WhatsApp number to show contact details on your campaign.';
+      }
+    }
     return null;
   };
 
@@ -390,7 +422,10 @@ export function CreateCampaignPage() {
         coverImage: coverImageUrl,
         ...(galleryUrls.length > 0 ? { galleryImages: galleryUrls } : {}),
         verificationDocumentUrl: verificationUrl,
-        termsAcceptedAt: new Date().toISOString()
+        termsAcceptedAt: new Date().toISOString(),
+        showPublicContact: formData.showPublicContact,
+        contactPhone: formData.contactPhone.trim() || null,
+        contactWhatsApp: formData.contactWhatsApp.trim() || null
       });
 
       navigate('/dashboard', {
@@ -565,6 +600,58 @@ export function CreateCampaignPage() {
                     required
                     className="w-full pl-10 pr-4 py-2.5 border border-surface-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                   />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-surface-200 bg-surface-50/80 p-4 space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-surface-900">Public contact (optional)</h3>
+                  <p className="text-xs text-surface-500 mt-1">
+                    Let donors call or WhatsApp you for inquiries. Off by default — only shown if you enable it.
+                    Include country code (e.g. +220…).
+                  </p>
+                </div>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="showPublicContact"
+                    checked={formData.showPublicContact}
+                    onChange={handleChange}
+                    className="mt-1 h-4 w-4 rounded border-surface-300 text-brand-600 focus:ring-brand-500"
+                  />
+                  <span className="text-sm text-surface-800">
+                    Show my contact details on the campaign page
+                  </span>
+                </label>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="contactPhone" className="block text-xs font-semibold text-surface-700 mb-1.5">
+                      Mobile (call)
+                    </label>
+                    <input
+                      id="contactPhone"
+                      type="tel"
+                      name="contactPhone"
+                      value={formData.contactPhone}
+                      onChange={handleChange}
+                      placeholder="+220 4512233"
+                      className="w-full px-3 py-2.5 border border-surface-200 rounded-xl bg-white focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="contactWhatsApp" className="block text-xs font-semibold text-surface-700 mb-1.5">
+                      WhatsApp
+                    </label>
+                    <input
+                      id="contactWhatsApp"
+                      type="tel"
+                      name="contactWhatsApp"
+                      value={formData.contactWhatsApp}
+                      onChange={handleChange}
+                      placeholder="+220 6612610"
+                      className="w-full px-3 py-2.5 border border-surface-200 rounded-xl bg-white focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
