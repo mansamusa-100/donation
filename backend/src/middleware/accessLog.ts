@@ -1,4 +1,5 @@
 import type { RequestHandler } from 'express';
+import { recordSecuritySignal } from '../lib/securityAlerts.js';
 
 /** Paths that would drown the log (health probes, etc.). */
 const SKIP_EXACT = new Set(['/api/health', '/api/health/']);
@@ -26,6 +27,7 @@ function shouldSkip(path: string): boolean {
 /**
  * Lightweight access log: method, path, status, duration, IP.
  * No bodies, query strings, or headers (avoids secrets / PII flood).
+ * Also feeds failed-login / admin probe burst alerts.
  */
 export const accessLogMiddleware: RequestHandler = (req, res, next) => {
   if (shouldSkip(req.path)) {
@@ -39,7 +41,8 @@ export const accessLogMiddleware: RequestHandler = (req, res, next) => {
     const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
     const ip = req.ip || req.socket.remoteAddress || '-';
     const status = res.statusCode;
-    const line = `[http] ${req.method} ${req.path} ${status} ${elapsedMs.toFixed(0)}ms ip=${ip}`;
+    const path = req.path;
+    const line = `[http] ${req.method} ${path} ${status} ${elapsedMs.toFixed(0)}ms ip=${ip}`;
 
     if (status >= 500) {
       console.error(line);
@@ -48,6 +51,13 @@ export const accessLogMiddleware: RequestHandler = (req, res, next) => {
     } else {
       console.info(line);
     }
+
+    recordSecuritySignal({
+      method: req.method,
+      path,
+      status,
+      ip
+    });
   });
 
   next();

@@ -69,7 +69,25 @@ const envSchema = z.object({
   OWNER_PASSWORD_SYNC: z
     .string()
     .default('false')
-    .transform((v) => ['1', 'true', 'yes', 'on'].includes(v.trim().toLowerCase()))
+    .transform((v) => ['1', 'true', 'yes', 'on'].includes(v.trim().toLowerCase())),
+  /**
+   * Security burst alerts (failed login / admin 401–403). Default on in production.
+   * Set false to disable. Alerts always log; email/webhook need a destination.
+   */
+  SECURITY_ALERTS_ENABLED: z
+    .string()
+    .default('auto')
+    .transform((v) => {
+      const t = v.trim().toLowerCase();
+      if (t === '' || t === 'auto') {
+        return 'auto' as const;
+      }
+      return ['1', 'true', 'yes', 'on'].includes(t);
+    }),
+  /** Alert inbox (comma-separated). Falls back to OWNER_EMAIL when empty. */
+  SECURITY_ALERT_TO: z.string().default(''),
+  /** Optional Discord/Slack-compatible webhook URL for security alerts. */
+  SECURITY_ALERT_WEBHOOK_URL: z.string().default('')
 });
 
 const INSECURE_JWT_SECRETS = new Set([

@@ -48,6 +48,9 @@ export const helmetMiddleware: RequestHandler = helmet({
       ...(env.NODE_ENV === 'production' ? { upgradeInsecureRequests: [] } : {})
     }
   },
+  // GIS Sign in with Google uses a popup that posts the ID token back to the opener.
+  // Helmet's default COOP "same-origin" isolates the opener and leaves a blank popup.
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 });
 
