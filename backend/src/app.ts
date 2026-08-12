@@ -29,6 +29,13 @@ import { asyncHandler } from './lib/asyncHandler.js';
 import { handleWaveWebhook } from './routes/waveWebhook.js';
 import { handleEasypayPartnerWebhook } from './routes/easypayWebhook.js';
 import { getUploadsRoot } from './lib/uploadPaths.js';
+import {
+  buildCampaignOgTags,
+  buildStandaloneOgHtml,
+  injectHeadTags,
+  loadCampaignOgPayload,
+  readSpaIndexHtml
+} from './lib/campaignOgHtml.js';
 
 export const app = express();
 
@@ -75,6 +82,41 @@ app.use('/api/uploads', uploadsRouter);
 app.use('/api/payout-methods', payoutMethodsRouter);
 app.use('/api/platform-bank-accounts', platformBankAccountsRouter);
 app.use('/api/bank-transfers', bankTransfersRouter);
+
+/**
+ * Campaign share previews: inject standard Open Graph + Twitter Card tags into the HTML
+ * for GET /campaign/:slug so WhatsApp, Facebook, etc. unfurl title, description, and cover.
+ */
+app.get(
+  '/campaign/:slug',
+  asyncHandler(async (req, res, next) => {
+    const slug = String(req.params.slug ?? '').trim();
+    if (!slug) {
+      next();
+      return;
+    }
+
+    const og = await loadCampaignOgPayload(slug);
+    if (!og) {
+      next();
+      return;
+    }
+
+    const tags = buildCampaignOgTags(og);
+    const spaIndex = path.join(process.cwd(), '..', 'frontend', 'dist', 'index.html');
+    const spaHtml = readSpaIndexHtml(spaIndex);
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    if (spaHtml) {
+      res.send(injectHeadTags(spaHtml, tags));
+      return;
+    }
+
+    // API-only / no Vite build: still return valid OG HTML for link crawlers.
+    res.send(buildStandaloneOgHtml(og));
+  })
+);
 
 /** Production: serve Vite build from workspace sibling when present (same container as API). */
 const frontendDist = path.join(process.cwd(), '..', 'frontend', 'dist');

@@ -54,6 +54,17 @@ export function CampaignDetailPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!campaign) {
+      return;
+    }
+    const previous = document.title;
+    document.title = `${campaign.title} · BarakahFund`;
+    return () => {
+      document.title = previous;
+    };
+  }, [campaign]);
+
   if (loadState === 'loading') {
     return <RouteLoader />;
   }
@@ -205,7 +216,11 @@ export function CampaignDetailPage() {
             <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-surface-200">
               <h3 className="font-display font-bold text-xl mb-4">Help by sharing</h3>
               <p className="text-surface-600 mb-6">Campaigns shared on social networks raise up to 5x more.</p>
-              <ShareButtons url={window.location.href} title={campaign.title} />
+              <ShareButtons
+                url={`${window.location.origin}/campaign/${campaign.slug}`}
+                title={campaign.title}
+                description={campaign.shortDescription}
+              />
             </div>
           </div>
 
