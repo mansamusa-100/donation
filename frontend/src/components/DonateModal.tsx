@@ -15,6 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { BRAND_NAME } from '../lib/brand';
 import { api } from '../lib/api';
 import { setEasypayPendingWalletSession } from '../lib/easypayPendingStorage';
+import { isCoarseMobileDevice } from '../lib/device';
 
 interface DonateModalProps {
   isOpen: boolean;
@@ -196,11 +197,13 @@ export function DonateModal({
         }
         setEasypayPendingWalletSession(res.partnerExternalBookingId, {
           launchUrl: res.launchUrl,
-          qrPayload: res.qrPayload
+          qrPayload: res.qrPayload,
+          channel: 'wave'
         });
         const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
+        const autolaunch = isCoarseMobileDevice() ? '&autolaunch=1' : '';
         window.location.assign(
-          `${window.location.origin}${base}/payment/easypay/pending?ref=${encodeURIComponent(res.partnerExternalBookingId)}`
+          `${window.location.origin}${base}/payment/easypay/pending?ref=${encodeURIComponent(res.partnerExternalBookingId)}${autolaunch}`
         );
         return;
       }
@@ -236,11 +239,13 @@ export function DonateModal({
       }
       setEasypayPendingWalletSession(res.partnerExternalBookingId, {
         launchUrl: res.launchUrl,
-        qrPayload: res.qrPayload
+        qrPayload: res.qrPayload,
+        channel: 'yonna'
       });
       const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
+      const autolaunch = isCoarseMobileDevice() ? '&autolaunch=1' : '';
       window.location.assign(
-        `${window.location.origin}${base}/payment/easypay/pending?ref=${encodeURIComponent(res.partnerExternalBookingId)}`
+        `${window.location.origin}${base}/payment/easypay/pending?ref=${encodeURIComponent(res.partnerExternalBookingId)}${autolaunch}`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start Yonna checkout.');

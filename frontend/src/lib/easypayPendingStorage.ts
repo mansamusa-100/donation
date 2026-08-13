@@ -1,8 +1,12 @@
 const PREFIX = 'bf_easypay_launch:';
+const AUTOLAUNCH_DONE_PREFIX = 'bf_easypay_autolaunch_done:';
+
+export type EasypayPendingWalletChannel = 'wave' | 'yonna';
 
 export type EasypayPendingWalletSession = {
   launchUrl: string;
   qrPayload?: string;
+  channel?: EasypayPendingWalletChannel;
 };
 
 export function setEasypayPendingWalletSession(
@@ -12,7 +16,8 @@ export function setEasypayPendingWalletSession(
   try {
     const payload: EasypayPendingWalletSession = {
       launchUrl: session.launchUrl,
-      ...(session.qrPayload != null && session.qrPayload !== '' ? { qrPayload: session.qrPayload } : {})
+      ...(session.qrPayload != null && session.qrPayload !== '' ? { qrPayload: session.qrPayload } : {}),
+      ...(session.channel ? { channel: session.channel } : {})
     };
     sessionStorage.setItem(PREFIX + partnerExternalBookingId, JSON.stringify(payload));
   } catch {
@@ -37,9 +42,12 @@ export function getEasypayPendingWalletSession(
         paymentHtml?: unknown;
       };
       if (parsed && typeof parsed.launchUrl === 'string') {
+        const channel =
+          parsed.channel === 'wave' || parsed.channel === 'yonna' ? parsed.channel : undefined;
         return {
           launchUrl: parsed.launchUrl,
-          qrPayload: typeof parsed.qrPayload === 'string' ? parsed.qrPayload : undefined
+          qrPayload: typeof parsed.qrPayload === 'string' ? parsed.qrPayload : undefined,
+          ...(channel ? { channel } : {})
         };
       }
       return null;
@@ -50,9 +58,26 @@ export function getEasypayPendingWalletSession(
   }
 }
 
+export function markEasypayAutolaunchDone(partnerExternalBookingId: string) {
+  try {
+    sessionStorage.setItem(AUTOLAUNCH_DONE_PREFIX + partnerExternalBookingId, '1');
+  } catch {
+    /* ignore */
+  }
+}
+
+export function wasEasypayAutolaunchDone(partnerExternalBookingId: string): boolean {
+  try {
+    return sessionStorage.getItem(AUTOLAUNCH_DONE_PREFIX + partnerExternalBookingId) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function clearEasypayPendingWalletSession(partnerExternalBookingId: string) {
   try {
     sessionStorage.removeItem(PREFIX + partnerExternalBookingId);
+    sessionStorage.removeItem(AUTOLAUNCH_DONE_PREFIX + partnerExternalBookingId);
   } catch {
     /* ignore */
   }

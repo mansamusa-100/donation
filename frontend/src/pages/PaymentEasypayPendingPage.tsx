@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { CheckCircleIcon, ExternalLinkIcon, Loader2Icon, QrCodeIcon } from 'lucide-react';
@@ -6,6 +6,8 @@ import { api } from '../lib/api';
 import {
   clearEasypayPendingWalletSession,
   getEasypayPendingWalletSession,
+  markEasypayAutolaunchDone,
+  wasEasypayAutolaunchDone,
   type EasypayPendingWalletSession
 } from '../lib/easypayPendingStorage';
 import { isCoarseMobileDevice } from '../lib/device';
@@ -15,14 +17,28 @@ import type { Campaign } from '../types/campaign';
 const MAX_ATTEMPTS = 120;
 const RETRY_MS = 2500;
 
+function walletLabel(channel: EasypayPendingWalletSession['channel']): string {
+  if (channel === 'wave') {
+    return 'Wave';
+  }
+  if (channel === 'yonna') {
+    return 'Yonna';
+  }
+  return 'wallet';
+}
+
 export function PaymentEasypayPendingPage() {
   const [searchParams] = useSearchParams();
   const ref = searchParams.get('ref');
+  const wantAutolaunch = searchParams.get('autolaunch') === '1';
 
   const [session, setSession] = useState<EasypayPendingWalletSession | null>(null);
   const mobile = useMemo(() => (typeof window !== 'undefined' ? isCoarseMobileDevice() : false), []);
   const [showMobileQr, setShowMobileQr] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [openingWallet, setOpeningWallet] = useState(false);
+  const [autoLaunchAttempted, setAutoLaunchAttempted] = useState(false);
+  const autoLaunchStarted = useRef(false);
 
   const [statusPhase, setStatusPhase] = useState<'checking' | 'success' | 'long_wait' | 'error'>(
     'checking'
@@ -37,10 +53,13 @@ export function PaymentEasypayPendingPage() {
       return;
     }
     setSession(getEasypayPendingWalletSession(ref));
+    setAutoLaunchAttempted(wasEasypayAutolaunchDone(ref));
   }, [ref]);
 
   const qrPayload = session?.qrPayload?.trim() || null;
   const launchUrl = session?.launchUrl ?? null;
+  const channel = session?.channel;
+  const label = walletLabel(channel);
 
   useEffect(() => {
     if (!qrPayload) {
@@ -68,8 +87,36 @@ export function PaymentEasypayPendingPage() {
     if (!launchUrl) {
       return;
     }
-    window.location.href = launchUrl;
+    setOpeningWallet(true);
+    // Full navigation — Wave/DPay HTTPS launch URLs open the app when installed.
+    window.location.assign(launchUrl);
   }, [launchUrl]);
+
+  /** One-shot mobile deep link: leave this tab in history so Back returns to polling. */
+  useEffect(() => {
+    if (!ref || !launchUrl || !wantAutolaunch || !mobile) {
+      return;
+    }
+    if (autoLaunchStarted.current || wasEasypayAutolaunchDone(ref)) {
+      setAutoLaunchAttempted(true);
+      return;
+    }
+    autoLaunchStarted.current = true;
+    markEasypayAutolaunchDone(ref);
+    setAutoLaunchAttempted(true);
+    setOpeningWallet(true);
+    const launchTimer = window.setTimeout(() => {
+      window.location.assign(launchUrl);
+    }, 150);
+    // If the OS opens the app without navigating away, drop the splash and show fallback CTA.
+    const settleTimer = window.setTimeout(() => {
+      setOpeningWallet(false);
+    }, 2500);
+    return () => {
+      window.clearTimeout(launchTimer);
+      window.clearTimeout(settleTimer);
+    };
+  }, [ref, launchUrl, wantAutolaunch, mobile]);
 
   useEffect(() => {
     if (!ref) {
@@ -98,10 +145,11 @@ export function PaymentEasypayPendingPage() {
             return;
           }
         } catch (e) {
-          if (!cancelled) {
-            setErrorMessage(e instanceof Error ? e.message : 'Could not check payment status');
-            setStatusPhase('error');
+          if (cancelled) {
+            return;
           }
+          setErrorMessage(e instanceof Error ? e.message : 'Could not check payment status');
+          setStatusPhase('error');
           return;
         }
         await new Promise((r) => setTimeout(r, RETRY_MS));
@@ -114,6 +162,25 @@ export function PaymentEasypayPendingPage() {
 
     return () => {
       cancelled = true;
+    };
+  }, [ref]);
+
+  /** When returning from the wallet app (bfcache / tab focus), resume “checking” UI. */
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        setOpeningWallet(false);
+        setSession(ref ? getEasypayPendingWalletSession(ref) : null);
+      }
+    };
+    const onPageShow = () => {
+      setOpeningWallet(false);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', onPageShow);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', onPageShow);
     };
   }, [ref]);
 
@@ -214,14 +281,28 @@ export function PaymentEasypayPendingPage() {
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center px-4 py-16">
       <div className="text-center max-w-lg w-full space-y-5">
-        <h1 className="font-display font-bold text-xl text-surface-900">
-          {mobile ? 'Finish paying in your wallet' : 'Complete your payment'}
-        </h1>
-        <p className="text-surface-600 text-sm">
-          {mobile
-            ? 'Open your wallet app to approve. After you pay, keep this page open — we will confirm as soon as DPay notifies us.'
-            : 'On desktop, open your wallet with the button below or scan the QR code. Keep this tab open until you see the thank-you message.'}
-        </p>
+        {mobile && wantAutolaunch && openingWallet ? (
+          <>
+            <Loader2Icon className="w-10 h-10 text-brand-600 animate-spin mx-auto" />
+            <h1 className="font-display font-bold text-xl text-surface-900">Opening {label}…</h1>
+            <p className="text-surface-600 text-sm">
+              Approve the payment in {label}. When you&apos;re done, return here — we&apos;ll confirm automatically.
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 className="font-display font-bold text-xl text-surface-900">
+              {mobile ? `Finish paying in ${label}` : 'Complete your payment'}
+            </h1>
+            <p className="text-surface-600 text-sm">
+              {mobile
+                ? autoLaunchAttempted
+                  ? `If ${label} didn't open, tap the button below. After you pay, come back to this page — we'll confirm as soon as DPay notifies us.`
+                  : `Open ${label} to approve. After you pay, keep this page available — we will confirm as soon as DPay notifies us.`
+                : 'On desktop, open your wallet with the button below or scan the QR code. Keep this tab open until you see the thank-you message.'}
+            </p>
+          </>
+        )}
 
         {!mobile && qrDataUrl ? (
           <div className="flex flex-col items-center gap-2 rounded-2xl border border-surface-200 bg-surface-50 py-6 px-4">
@@ -244,7 +325,11 @@ export function PaymentEasypayPendingPage() {
             onClick={() => openWallet()}
             className="inline-flex items-center justify-center gap-2 w-full px-6 py-3 bg-brand-600 text-white font-bold rounded-xl hover:bg-brand-700">
             <ExternalLinkIcon className="w-5 h-5" />
-            {mobile ? 'Open wallet app' : 'Open wallet on this device'}
+            {mobile
+              ? autoLaunchAttempted
+                ? `Open ${label} again`
+                : `Open ${label}`
+              : 'Open wallet on this device'}
           </button>
         ) : (
           <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
