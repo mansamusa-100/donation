@@ -879,38 +879,12 @@ export function DonateModal({
                   <div className="space-y-4">
                     <div className="p-4 bg-surface-50 border border-surface-200 rounded-xl text-sm text-surface-800 space-y-2">
                       <p className="font-semibold text-surface-900">Pay with Yonna</p>
-                      <p>
-                        Total charge:{' '}
-                        <strong>D{chargeTotal}</strong>
-                        {platformTipAmount > 0 ? (
-                          <span className="text-surface-600">
-                            {' '}
-                            (D{amount} + D{platformTipAmount} tip)
-                          </span>
-                        ) : null}
-                        .
+                      <p className="text-sm text-surface-700">
+                        Yonna is not available for checkout yet. Coming soon.
                       </p>
-                      {easypayCheckout && paymentProviders?.find((p) => p.id === 'yonna')?.checkoutLive ? (
-                        <div className="space-y-1 pt-1">
-                          <label className="block text-xs font-semibold text-surface-700">
-                            Mobile (optional, for Yonna)
-                          </label>
-                          <input
-                            type="tel"
-                            value={yonnaPhone}
-                            onChange={(e) => setYonnaPhone(e.target.value)}
-                            placeholder="If DPay requires payer phone"
-                            className="w-full p-2 rounded-lg border-2 border-surface-200 text-sm"
-                          />
-                        </div>
-                      ) : null}
-                      {paymentProviders?.find((p) => p.id === 'yonna')?.checkoutLive ? null : (
-                        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
-                          {paymentProviders?.find((p) => p.id === 'yonna')?.configured
-                            ? 'Server has Yonna environment variables — use DPay to enable Yonna checkout.'
-                            : 'Not active yet: configure DPay partner or add YONNA_FOREX_* for a direct integration.'}
-                        </p>
-                      )}
+                      <p className="text-xs font-semibold text-amber-900 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-center">
+                        Yonna coming soon
+                      </p>
                     </div>
                   </div>
                 )}
@@ -971,26 +945,12 @@ export function DonateModal({
                       }
 
                       if (paymentWallet === 'yonna') {
-                        const yonnaLive = paymentProviders?.find((p) => p.id === 'yonna')?.checkoutLive === true;
                         return (
                           <button
                             type="button"
-                            onClick={() => void handlePayWithYonnaEasypay()}
-                            disabled={isProcessing || !yonnaLive}
-                            className="flex-1 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold text-lg transition-colors flex justify-center items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
-                            {isProcessing ? (
-                              <span className="animate-pulse">Opening Yonna…</span>
-                            ) : (
-                              <>
-                                Pay D{chargeTotal} with Yonna
-                                {platformTipAmount > 0 ? (
-                                  <span className="text-sm font-normal opacity-90">
-                                    {' '}
-                                    (D{amount} + D{platformTipAmount} tip)
-                                  </span>
-                                ) : null}
-                              </>
-                            )}
+                            disabled
+                            className="flex-1 py-4 bg-surface-200 text-surface-600 rounded-xl font-bold text-lg cursor-not-allowed">
+                            Yonna coming soon
                           </button>
                         );
                       }
