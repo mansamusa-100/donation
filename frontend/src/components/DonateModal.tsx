@@ -3,9 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   XIcon,
   HeartIcon,
-  SmartphoneIcon,
-  Wallet,
-  Landmark,
   Building2,
   CheckCircleIcon,
   SparklesIcon
@@ -16,6 +13,7 @@ import { BRAND_NAME } from '../lib/brand';
 import { api } from '../lib/api';
 import { setEasypayPendingWalletSession } from '../lib/easypayPendingStorage';
 import { isCoarseMobileDevice } from '../lib/device';
+import { PaymentBrandLogo } from './PaymentBrandLogo';
 
 interface DonateModalProps {
   isOpen: boolean;
@@ -635,11 +633,14 @@ export function DonateModal({
               }}
               className="space-y-6">
               
-                <p className="text-xs text-surface-500">
-                  {easypayCheckout
-                    ? 'Payments go through DPay (Wave, Yonna, or APS). Configure return URLs on the DPay side if you want donors to land on your site after paying.'
-                    : 'Choose a mobile wallet. APS and Yonna appear here now; your team connects each API on the server when you are ready.'}
-                </p>
+                <div className="flex flex-col items-center gap-1.5 pb-1">
+                  <PaymentBrandLogo
+                    brand="dpay"
+                    alt="DPay"
+                    className="h-11 w-auto max-w-[180px] object-contain"
+                  />
+                  <p className="text-xs font-semibold tracking-wide text-surface-500">Powered By DPay</p>
+                </div>
 
                 <div className="flex flex-wrap gap-2 p-1 bg-surface-100 rounded-xl">
                   <button
@@ -653,8 +654,9 @@ export function DonateModal({
                       setApsAuthState('');
                       setApsOtp('');
                     }}
-                    className={`flex-1 min-w-[5.5rem] py-2 px-2 text-sm font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors ${paymentWallet === 'wave' ? 'bg-white shadow-sm text-surface-900' : 'text-surface-500'}`}>
-                    <SmartphoneIcon className="w-4 h-4 shrink-0" /> Wave
+                    className={`flex-1 min-w-[5.5rem] py-2.5 px-2 text-sm font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-colors ${paymentWallet === 'wave' ? 'bg-white shadow-sm text-surface-900' : 'text-surface-500'}`}>
+                    <PaymentBrandLogo brand="wave" alt="Wave" className="h-7 w-7 object-contain" />
+                    Wave
                   </button>
                   <button
                     type="button"
@@ -667,8 +669,9 @@ export function DonateModal({
                       setApsAuthState('');
                       setApsOtp('');
                     }}
-                    className={`flex-1 min-w-[5.5rem] py-2 px-2 text-sm font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors ${paymentWallet === 'aps' ? 'bg-white shadow-sm text-surface-900' : 'text-surface-500'}`}>
-                    <Wallet className="w-4 h-4 shrink-0" /> APS
+                    className={`flex-1 min-w-[5.5rem] py-2.5 px-2 text-sm font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-colors ${paymentWallet === 'aps' ? 'bg-white shadow-sm text-surface-900' : 'text-surface-500'}`}>
+                    <PaymentBrandLogo brand="aps" alt="APS" className="h-7 w-7 object-contain" />
+                    APS
                   </button>
                   <button
                     type="button"
@@ -681,8 +684,9 @@ export function DonateModal({
                       setApsAuthState('');
                       setApsOtp('');
                     }}
-                    className={`flex-1 min-w-[5.5rem] py-2 px-2 text-sm font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors ${paymentWallet === 'yonna' ? 'bg-white shadow-sm text-surface-900' : 'text-surface-500'}`}>
-                    <Landmark className="w-4 h-4 shrink-0" /> Yonna
+                    className={`flex-1 min-w-[5.5rem] py-2.5 px-2 text-sm font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-colors ${paymentWallet === 'yonna' ? 'bg-white shadow-sm text-surface-900' : 'text-surface-500'}`}>
+                    <PaymentBrandLogo brand="yonna" alt="Yonna" className="h-7 w-7 object-contain" />
+                    Yonna
                   </button>
                   <button
                     type="button"
@@ -690,8 +694,8 @@ export function DonateModal({
                       setPaymentWallet('bank');
                       setApsPhase('idle');
                     }}
-                    className={`flex-1 min-w-[5.5rem] py-2 px-2 text-sm font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors ${paymentWallet === 'bank' ? 'bg-white shadow-sm text-surface-900' : 'text-surface-500'}`}>
-                    <Building2 className="w-4 h-4 shrink-0" /> Bank
+                    className={`flex-1 min-w-[5.5rem] py-2.5 px-2 text-sm font-semibold rounded-lg flex flex-col sm:flex-row items-center justify-center gap-1.5 transition-colors ${paymentWallet === 'bank' ? 'bg-white shadow-sm text-surface-900' : 'text-surface-500'}`}>
+                    <Building2 className="w-5 h-5 shrink-0" /> Bank
                   </button>
                 </div>
 
@@ -784,7 +788,10 @@ export function DonateModal({
                 ) : paymentWallet === 'wave' ? (
                   <div className="space-y-4">
                     <div className="p-4 bg-brand-50 border border-brand-100 rounded-xl text-sm text-surface-800 space-y-2">
-                      <p className="font-semibold text-brand-900">Pay with Wave</p>
+                      <p className="font-semibold text-brand-900 flex items-center gap-2">
+                        <PaymentBrandLogo brand="wave" alt="Wave" className="h-6 w-6 object-contain" />
+                        Pay with Wave
+                      </p>
                       <ul className="text-sm space-y-1 list-disc list-inside text-surface-700">
                         <li>
                           Campaign: <strong>D{amount}</strong>
@@ -811,7 +818,10 @@ export function DonateModal({
                 ) : paymentWallet === 'aps' ? (
                   <div className="space-y-4">
                     <div className="p-4 bg-surface-50 border border-surface-200 rounded-xl text-sm text-surface-800 space-y-2">
-                      <p className="font-semibold text-surface-900">Pay with APS Money</p>
+                      <p className="font-semibold text-surface-900 flex items-center gap-2">
+                        <PaymentBrandLogo brand="aps" alt="APS" className="h-6 w-6 object-contain" />
+                        Pay with APS Money
+                      </p>
                       <p>
                         Total charge:{' '}
                         <strong>D{chargeTotal}</strong>
@@ -883,7 +893,10 @@ export function DonateModal({
                 ) : (
                   <div className="space-y-4">
                     <div className="p-4 bg-surface-50 border border-surface-200 rounded-xl text-sm text-surface-800 space-y-2">
-                      <p className="font-semibold text-surface-900">Pay with Yonna</p>
+                      <p className="font-semibold text-surface-900 flex items-center gap-2">
+                        <PaymentBrandLogo brand="yonna" alt="Yonna" className="h-6 w-6 object-contain" />
+                        Pay with Yonna
+                      </p>
                       <p className="text-sm text-surface-700">
                         Yonna is not available for checkout yet. Coming soon.
                       </p>

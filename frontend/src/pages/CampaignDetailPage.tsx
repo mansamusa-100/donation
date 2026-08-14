@@ -290,7 +290,7 @@ export function CampaignDetailPage() {
               </button>
 
               <div className="text-center text-xs text-surface-500 flex items-center justify-center gap-1">
-                <ShieldCheckIcon className="w-4 h-4" /> Secure payments via Stripe & Local Wallets
+                <ShieldCheckIcon className="w-4 h-4" /> Secure payments via Banks & Local Wallets
               </div>
             </div>
 
