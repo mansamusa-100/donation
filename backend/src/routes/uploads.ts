@@ -11,6 +11,7 @@ import {
   writeProfileAvatarWebp
 } from '../lib/processRasterUpload.js';
 import { getUploadsRoot } from '../lib/uploadPaths.js';
+import { recordKycDocumentSubmission } from '../lib/userKyc.js';
 
 function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
@@ -127,7 +128,8 @@ uploadsRouter.post(
       } else {
         url = `/uploads/verification-ids/${userId}/${req.file.filename}`;
       }
-      res.json({ url });
+      await recordKycDocumentSubmission(userId, url);
+      res.json({ url, kycStatus: 'Pending' as const });
     } catch (err) {
       console.error('Verification document processing failed:', err);
       res.status(400).json({

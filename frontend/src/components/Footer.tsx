@@ -23,7 +23,7 @@ export function Footer() {
               </span>
             </Link>
             <p className="text-sm leading-relaxed text-surface-400">
-              {BRAND_NAME} is a crowdfunding platform for meaningful causes — empowering communities, funding dreams,
+              {BRAND_NAME} is a crowdfunding platform for meaningful causes, empowering communities, funding dreams,
               and providing relief when it matters most.
             </p>
             <div className="flex gap-4 pt-2">

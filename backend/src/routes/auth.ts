@@ -67,6 +67,9 @@ const verifyEmailSchema = z.object({
   token: z.string().min(10, 'Invalid verification link')
 });
 
+import { serializeOwnKyc } from '../lib/userKyc.js';
+import { isPlatformOwnerEmail } from '../lib/platformOwner.js';
+
 const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID || undefined);
 
 function serializeAuthUser(user: {
@@ -76,16 +79,50 @@ function serializeAuthUser(user: {
   role: 'ADMIN' | 'USER';
   adminPanelPermissions: string[];
   emailVerifiedAt?: Date | null;
+  kycStatus?: import('@prisma/client').KycStatus;
+  kycDocumentUrl?: string | null;
+  kycSubmittedAt?: Date | null;
+  kycReviewedAt?: Date | null;
+  kycNotes?: string | null;
 }) {
+  const kyc =
+    user.kycStatus != null
+      ? serializeOwnKyc({
+          kycStatus: user.kycStatus,
+          kycDocumentUrl: user.kycDocumentUrl ?? null,
+          kycSubmittedAt: user.kycSubmittedAt ?? null,
+          kycReviewedAt: user.kycReviewedAt ?? null,
+          kycNotes: user.kycNotes ?? null
+        })
+      : {
+          kycStatus: 'Unverified' as const,
+          hasKycDocument: false,
+          kycDocumentUrl: null,
+          kycSubmittedAt: null,
+          kycReviewedAt: null,
+          kycNotes: null
+        };
+
   return {
     id: user.id,
     email: user.email,
     fullName: user.fullName,
     role: user.role,
     emailVerified: user.emailVerifiedAt != null,
-    adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
+    adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined,
+    /** True only for the OWNER_EMAIL account — can promote/demote admins. */
+    isPlatformOwner: user.role === 'ADMIN' && isPlatformOwnerEmail(user.email),
+    ...kyc
   };
 }
+
+const kycSelect = {
+  kycStatus: true,
+  kycDocumentUrl: true,
+  kycSubmittedAt: true,
+  kycReviewedAt: true,
+  kycNotes: true
+} as const;
 
 async function issueEmailVerification(user: {
   id: string;
@@ -208,7 +245,8 @@ authRouter.post(
         role: true,
         adminPanelPermissions: true,
         tokenVersion: true,
-        emailVerifiedAt: true
+        emailVerifiedAt: true,
+        ...kycSelect
       }
     });
 
@@ -319,7 +357,8 @@ authRouter.post(
         isActive: true,
         adminPanelPermissions: true,
         tokenVersion: true,
-        emailVerifiedAt: true
+        emailVerifiedAt: true,
+        ...kycSelect
       }
     });
 
@@ -484,7 +523,8 @@ authRouter.post(
         role: true,
         adminPanelPermissions: true,
         tokenVersion: true,
-        emailVerifiedAt: true
+        emailVerifiedAt: true,
+        ...kycSelect
       }
     });
 
@@ -546,7 +586,8 @@ authRouter.get(
         isActive: true,
         createdAt: true,
         adminPanelPermissions: true,
-        emailVerifiedAt: true
+        emailVerifiedAt: true,
+        ...kycSelect
       }
     });
 
@@ -565,7 +606,9 @@ authRouter.get(
       isActive: user.isActive,
       createdAt: user.createdAt,
       emailVerified: user.emailVerifiedAt != null,
-      adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined
+      adminPanelPermissions: user.role === 'ADMIN' ? user.adminPanelPermissions : undefined,
+      isPlatformOwner: user.role === 'ADMIN' && isPlatformOwnerEmail(user.email),
+      ...serializeOwnKyc(user)
     });
   })
 );

@@ -10,7 +10,7 @@ export function TrustSafetyPage() {
       <section className="space-y-3">
         <h2 className="font-display text-xl font-bold text-surface-900">Campaign review</h2>
         <p>
-          New campaigns are reviewed by administrators before they are activated for the public site. Organizers may be
+          New campaigns are reviewed by our compliance team before they are activated for the public site. Organizers may be
           asked to provide identification or supporting documentation. Approval, rejection, or closure decisions are
           part of keeping the directory credible.
         </p>
@@ -28,7 +28,7 @@ export function TrustSafetyPage() {
       <section className="space-y-3">
         <h2 className="font-display text-xl font-bold text-surface-900">Accounts & fraud</h2>
         <p>
-          Suspicious activity, impersonation, or misuse of the platform should be reported promptly. Administrators can
+          Suspicious activity, impersonation, or misuse of the platform should be reported promptly. The Compliance Team can
           deactivate accounts and take campaigns offline when policies are violated.
         </p>
       </section>

@@ -41,6 +41,7 @@ import { serializeBankTransferIntent } from '../lib/bankTransferSerialize.js';
 import { isValidContactPhone, normalizeContactPhone } from '../lib/contactPhone.js';
 import { serializePlatformBankAccount } from '../lib/platformBankAccountSerialize.js';
 import { isOwnedVerificationDocumentUrl } from '../lib/processRasterUpload.js';
+import { recordKycDocumentSubmission } from '../lib/userKyc.js';
 
 const campaignQuerySchema = z.object({
   search: z.string().trim().optional(),
@@ -456,6 +457,21 @@ campaignsRouter.post(
           );
         }
 
+        const organizer = await tx.user.findUnique({
+          where: { id: userId },
+          select: { kycStatus: true }
+        });
+        if (!organizer || organizer.kycStatus !== 'Verified') {
+          throw new HttpError(
+            403,
+            organizer?.kycStatus === 'Pending'
+              ? 'Your identity verification is still under review. Withdrawals unlock after an admin verifies your ID.'
+              : organizer?.kycStatus === 'Rejected'
+                ? 'Your identity verification was rejected. Upload a clearer ID from Create campaign (or contact support), then wait for re-approval before withdrawing.'
+                : 'Identity verification is required before you can withdraw funds. Upload a government ID when creating a campaign, then wait for admin approval.'
+          );
+        }
+
         if (!canRequestWithdrawal(campaign.status)) {
           throw new HttpError(
             400,
@@ -867,6 +883,9 @@ campaignsRouter.post(
       });
       return;
     }
+
+    // Keep user-level KYC in sync with the document attached to this campaign.
+    await recordKycDocumentSubmission(userId, body.verificationDocumentUrl);
 
     const endResult = validateNewCampaignEndDate(body.campaignEndDate);
     if (!endResult.ok) {

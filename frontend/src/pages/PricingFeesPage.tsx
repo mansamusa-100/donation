@@ -16,7 +16,7 @@ export function PricingFeesPage() {
         </p>
         <p>
           Donors may optionally add a <strong className="text-surface-900">voluntary tip</strong> at checkout to
-          support the platform—tips are separate from the amount raised for the campaign.
+          support the platform, tips are separate from the amount raised for the campaign.
         </p>
       </section>
 

@@ -41,6 +41,14 @@ enum UserRole {
   USER
 }
 
+/// Platform KYC for organizers (ID document review). Independent of email verification.
+enum KycStatus {
+  Unverified
+  Pending
+  Verified
+  Rejected
+}
+
 enum WithdrawalRequestStatus {
   Pending
   Approved
@@ -84,6 +92,15 @@ model User {
   emailVerificationExpires   DateTime?
   /// Increment to invalidate all outstanding JWTs (password reset, deactivation, etc.).
   tokenVersion         Int       @default(0)
+  /// Organizer identity verification (government ID). Required before withdrawals.
+  kycStatus            KycStatus @default(Unverified)
+  kycDocumentUrl       String?
+  kycSubmittedAt       DateTime?
+  kycReviewedAt        DateTime?
+  kycReviewedByAdminId String?
+  kycNotes             String?
+  kycReviewer          User?     @relation("KycReviewsByAdmin", fields: [kycReviewedByAdminId], references: [id], onDelete: SetNull)
+  kycReviewsPerformed  User[]    @relation("KycReviewsByAdmin")
   campaigns       Campaign[]
   extensionRequestsSubmitted CampaignExtensionRequest[] @relation("ExtensionRequestsByUser")
   extensionRequestsReviewed  CampaignExtensionRequest[] @relation("ExtensionReviewsByAdmin")

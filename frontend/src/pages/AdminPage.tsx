@@ -35,6 +35,7 @@ import {
   type AdminNotificationSummary,
   type AdminPanelKey,
   type AdminUserRow,
+  type AdminUserDetail,
   type AdminWithdrawalRequestRow,
   type AdminWithdrawalStatus
 } from '../types/admin';
@@ -51,6 +52,19 @@ function formatDate(iso: string) {
     month: 'short',
     day: 'numeric'
   });
+}
+
+function kycBadgeClass(status: string | undefined) {
+  switch (status) {
+    case 'Verified':
+      return 'bg-emerald-100 text-emerald-800';
+    case 'Pending':
+      return 'bg-amber-100 text-amber-900';
+    case 'Rejected':
+      return 'bg-red-100 text-red-800';
+    default:
+      return 'bg-slate-100 text-slate-600';
+  }
 }
 
 function formatDateTime(iso: string) {
@@ -87,12 +101,20 @@ function activityTypeLabel(type: string) {
       return 'Campaign';
     case 'USER_STATUS_CHANGED':
       return 'Account';
+    case 'USER_KYC_CHANGED':
+      return 'KYC';
+    case 'USER_KYC_VIEWED':
+      return 'KYC view';
     case 'WITHDRAWAL_REQUESTED':
       return 'Withdrawal';
     case 'WITHDRAWAL_STATUS_CHANGED':
       return 'Withdrawal';
     case 'ADMIN_ACCOUNT_CREATED':
       return 'Admin created';
+    case 'ADMIN_ACCOUNT_PROMOTED':
+      return 'Admin promoted';
+    case 'ADMIN_ACCOUNT_DEMOTED':
+      return 'Admin demoted';
     case 'ADMIN_PERMISSIONS_CHANGED':
       return 'Admin permissions';
     case 'EASYPAY_PROVISION':
@@ -122,7 +144,7 @@ const PANEL_KEY_LABEL: Record<AdminPanelKey, string> = {
   queue: 'Review queue',
   campaigns: 'All campaigns',
   withdrawals: 'Withdrawals',
-  users: 'Users (activate/deactivate)',
+  users: 'Users & KYC',
   admins: 'Admins (create + permissions)',
   easypay: 'DPay (provision tenant)',
   bank: 'Bank transfers (donations + accounts)',
@@ -276,6 +298,11 @@ export function AdminPage() {
   const [newAdmin, setNewAdmin] = useState({ email: '', password: '', fullName: '', phoneNumber: '' });
   const [newAdminFull, setNewAdminFull] = useState(true);
   const [newAdminKeys, setNewAdminKeys] = useState<AdminPanelKey[]>(['overview']);
+  const [promoteEmail, setPromoteEmail] = useState('');
+  const [promoteFull, setPromoteFull] = useState(true);
+  const [promoteKeys, setPromoteKeys] = useState<AdminPanelKey[]>(['overview']);
+  const [promoteSubmitting, setPromoteSubmitting] = useState(false);
+  const [busyDemoteId, setBusyDemoteId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Record<string, { full: boolean; keys: AdminPanelKey[] }>>({});
   const [easypayForm, setEasypayForm] = useState({
     externalUserId: 'barakahfund-platform',
@@ -323,6 +350,10 @@ export function AdminPage() {
   const [withdrawalsTotal, setWithdrawalsTotal] = useState(0);
   const [usersPage, setUsersPage] = useState(1);
   const [usersTotal, setUsersTotal] = useState(0);
+  const [userDetail, setUserDetail] = useState<AdminUserDetail | null>(null);
+  const [userDetailLoading, setUserDetailLoading] = useState(false);
+  const [kycNotesDraft, setKycNotesDraft] = useState('');
+  const [busyKycUserId, setBusyKycUserId] = useState<string | null>(null);
   const [notificationSummary, setNotificationSummary] = useState<AdminNotificationSummary | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
@@ -596,6 +627,60 @@ export function AdminPage() {
     }
   };
 
+  const handleOpenUserKycDocument = async (userId: string) => {
+    setActionError('');
+    try {
+      const blob = await api.getAdminUserKycDocumentBlob(userId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not open KYC document');
+    }
+  };
+
+  const openUserDetail = async (userId: string) => {
+    setActionError('');
+    setUserDetailLoading(true);
+    setKycNotesDraft('');
+    try {
+      const detail = await api.getAdminUser(userId);
+      setUserDetail(detail);
+      setKycNotesDraft(detail.kycNotes ?? '');
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not load user');
+      setUserDetail(null);
+    } finally {
+      setUserDetailLoading(false);
+    }
+  };
+
+  const handleKycUpdate = async (status: 'Verified' | 'Rejected' | 'Pending') => {
+    if (!userDetail) {
+      return;
+    }
+    if (status === 'Rejected' && !kycNotesDraft.trim()) {
+      setActionError('Add a short note explaining why KYC was rejected.');
+      return;
+    }
+    setActionError('');
+    setBusyKycUserId(userDetail.id);
+    try {
+      await api.updateAdminUserKyc(userDetail.id, {
+        status,
+        notes: kycNotesDraft.trim() || undefined
+      });
+      const detail = await api.getAdminUser(userDetail.id);
+      setUserDetail(detail);
+      setKycNotesDraft(detail.kycNotes ?? '');
+      await loadData();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'KYC update failed');
+    } finally {
+      setBusyKycUserId(null);
+    }
+  };
+
   const handleExtensionReview = async (
     requestId: string,
     status: 'Approved' | 'Rejected'
@@ -780,6 +865,64 @@ export function AdminPage() {
       setAccountActionError(err instanceof Error ? err.message : 'Could not create admin');
     } finally {
       setNewAdminSubmitting(false);
+    }
+  };
+
+  const handlePromoteAdmin = async (e: FormEvent) => {
+    e.preventDefault();
+    setAccountActionError('');
+    if (!user?.isPlatformOwner) {
+      setAccountActionError('Only the platform owner can promote users to admin.');
+      return;
+    }
+    if (!promoteFull && promoteKeys.length === 0) {
+      setAccountActionError('Choose at least one area, or use full access.');
+      return;
+    }
+    setPromoteSubmitting(true);
+    try {
+      const res = await api.promoteAdminAccount({
+        email: promoteEmail.trim(),
+        adminPanelPermissions: promoteFull ? [] : [...promoteKeys]
+      });
+      setPromoteEmail('');
+      setPromoteFull(true);
+      setPromoteKeys(['overview']);
+      await loadData();
+      window.alert(res.message);
+    } catch (err) {
+      setAccountActionError(err instanceof Error ? err.message : 'Could not promote user');
+    } finally {
+      setPromoteSubmitting(false);
+    }
+  };
+
+  const handleDemoteAdmin = async (row: AdminAccountRow) => {
+    if (!user?.isPlatformOwner) {
+      setAccountActionError('Only the platform owner can demote admins.');
+      return;
+    }
+    if (row.isPlatformOwner) {
+      setAccountActionError('The platform owner account cannot be demoted.');
+      return;
+    }
+    if (
+      !window.confirm(
+        `Demote ${row.fullName} (${row.email}) back to a regular user? They will lose admin access immediately.`
+      )
+    ) {
+      return;
+    }
+    setAccountActionError('');
+    setBusyDemoteId(row.id);
+    try {
+      const res = await api.demoteAdminAccount(row.id);
+      await loadData();
+      window.alert(res.message);
+    } catch (err) {
+      setAccountActionError(err instanceof Error ? err.message : 'Could not demote admin');
+    } finally {
+      setBusyDemoteId(null);
     }
   };
 
@@ -1255,7 +1398,7 @@ export function AdminPage() {
                         submitted {formatDate(c.createdAt)}
                       </div>
                       <div className="mt-auto pt-5 flex flex-wrap gap-2">
-                        {c.verificationDocumentUrl ? (
+                        {c.verificationDocumentUrl || c.creator?.hasKycDocument ? (
                           <button
                             type="button"
                             onClick={() => void handleOpenVerificationDocument(c.id)}
@@ -1263,6 +1406,12 @@ export function AdminPage() {
                             <ExternalLinkIcon className="w-4 h-4" />
                             View ID document
                           </button>
+                        ) : null}
+                        {c.creator?.kycStatus ? (
+                          <span
+                            className={`inline-flex items-center text-xs font-bold px-2 py-0.5 rounded-md ${kycBadgeClass(c.creator.kycStatus)}`}>
+                            KYC: {c.creator.kycStatus}
+                          </span>
                         ) : null}
                         <button
                           type="button"
@@ -1325,6 +1474,14 @@ export function AdminPage() {
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <div className="flex flex-wrap justify-end gap-2">
+                          {(c.verificationDocumentUrl || c.creator?.hasKycDocument) && (
+                            <button
+                              type="button"
+                              onClick={() => void handleOpenVerificationDocument(c.id)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 text-slate-700 hover:bg-slate-50">
+                              View ID
+                            </button>
+                          )}
                           {c.status === 'Active' && (
                             <Link
                               to={`/campaign/${c.slug}`}
@@ -1421,6 +1578,12 @@ export function AdminPage() {
                         <td className="px-4 py-3 text-slate-700">
                           <div className="font-medium">{w.user.fullName}</div>
                           <div className="text-xs text-slate-500">{w.user.email}</div>
+                          {w.user.kycStatus ? (
+                            <span
+                              className={`mt-1 inline-flex text-[10px] font-bold px-1.5 py-0.5 rounded ${kycBadgeClass(w.user.kycStatus)}`}>
+                              KYC: {w.user.kycStatus}
+                            </span>
+                          ) : null}
                         </td>
                         <td className="px-4 py-3 font-bold text-slate-900">{formatGmd(w.amount)}</td>
                         <td className="px-4 py-3 text-slate-700">{formatGmd(w.processingFeeAmount)}</td>
@@ -1454,6 +1617,14 @@ export function AdminPage() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex flex-wrap justify-end gap-2">
+                            {w.user.hasKycDocument ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleOpenUserKycDocument(w.user.id)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 text-slate-700 hover:bg-slate-50">
+                                View ID
+                              </button>
+                            ) : null}
                             {w.status === 'Pending' && (
                               <>
                                 <button
@@ -1504,6 +1675,7 @@ export function AdminPage() {
           )}
 
           {tab === 'users' && (
+            <div className="space-y-4">
             <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
@@ -1511,6 +1683,7 @@ export function AdminPage() {
                   <tr className="border-b border-slate-200 text-left text-slate-500 font-semibold bg-slate-50">
                     <th className="px-4 py-3">User</th>
                     <th className="px-4 py-3">Role</th>
+                    <th className="px-4 py-3">KYC</th>
                     <th className="px-4 py-3">Campaigns / donations</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3 text-right">Action</th>
@@ -1531,6 +1704,11 @@ export function AdminPage() {
                           {u.role}
                         </span>
                       </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${kycBadgeClass(u.kycStatus)}`}>
+                          {u.kycStatus}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-slate-600">
                         {u._count.campaigns} / {u._count.donations}
                       </td>
@@ -1543,13 +1721,24 @@ export function AdminPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          disabled={busyUserId === u.id || (u.id === user.id && u.isActive)}
-                          onClick={() => void handleUserToggle(u)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 hover:bg-slate-50 disabled:opacity-40">
-                          {u.isActive ? 'Deactivate' : 'Activate'}
-                        </button>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {u.role === 'USER' && (
+                            <button
+                              type="button"
+                              disabled={userDetailLoading}
+                              onClick={() => void openUserDetail(u.id)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 hover:bg-slate-50 disabled:opacity-40">
+                              KYC / details
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={busyUserId === u.id || (u.id === user.id && u.isActive)}
+                            onClick={() => void handleUserToggle(u)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 hover:bg-slate-50 disabled:opacity-40">
+                            {u.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1563,10 +1752,214 @@ export function AdminPage() {
               onPageChange={setUsersPage}
             />
             </div>
+
+            {userDetail && (
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5 space-y-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="font-display font-bold text-lg text-slate-900">{userDetail.fullName}</h2>
+                    <p className="text-sm text-slate-600">{userDetail.email}</p>
+                    {userDetail.phoneNumber ? (
+                      <p className="text-xs text-slate-500 mt-0.5">{userDetail.phoneNumber}</p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setUserDetail(null)}
+                    className="text-xs font-bold text-slate-500 hover:text-slate-800">
+                    Close
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${kycBadgeClass(userDetail.kycStatus)}`}>
+                    KYC: {userDetail.kycStatus}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    Email {userDetail.emailVerified ? 'verified' : 'not verified'}
+                  </span>
+                  {userDetail.kycSubmittedAt ? (
+                    <span className="text-xs text-slate-500">
+                      Submitted {formatDate(userDetail.kycSubmittedAt)}
+                    </span>
+                  ) : null}
+                  {userDetail.kycReviewedAt ? (
+                    <span className="text-xs text-slate-500">
+                      Reviewed {formatDate(userDetail.kycReviewedAt)}
+                      {userDetail.kycReviewer ? ` by ${userDetail.kycReviewer.fullName}` : ''}
+                    </span>
+                  ) : null}
+                </div>
+
+                {userDetail.kycNotes ? (
+                  <p className="text-sm text-slate-700 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                    Notes: {userDetail.kycNotes}
+                  </p>
+                ) : null}
+
+                <div className="flex flex-wrap gap-2">
+                  {userDetail.hasKycDocument ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleOpenUserKycDocument(userDetail.id)}
+                      className="px-3 py-2 rounded-lg text-sm font-bold border border-slate-200 hover:bg-slate-50 flex items-center gap-1.5">
+                      <ExternalLinkIcon className="w-4 h-4" />
+                      View ID document
+                    </button>
+                  ) : (
+                    <p className="text-sm text-slate-500">No ID document on file.</p>
+                  )}
+                  {user.isPlatformOwner && userDetail.role === 'USER' && userDetail.isActive && (
+                    <button
+                      type="button"
+                      disabled={promoteSubmitting}
+                      onClick={() => {
+                        setPromoteEmail(userDetail.email);
+                        setTab('admins');
+                        setUserDetail(null);
+                      }}
+                      className="px-3 py-2 rounded-lg text-sm font-bold bg-brand-600 text-white disabled:opacity-50">
+                      Promote to admin…
+                    </button>
+                  )}
+                </div>
+
+                {userDetail.role === 'USER' && userDetail.hasKycDocument && (
+                  <div className="space-y-3 border-t border-slate-100 pt-4">
+                    <label className="block text-xs font-bold text-slate-500 uppercase" htmlFor="kyc-notes">
+                      Review notes (required to reject)
+                    </label>
+                    <textarea
+                      id="kyc-notes"
+                      rows={2}
+                      value={kycNotesDraft}
+                      onChange={(e) => setKycNotesDraft(e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      placeholder="e.g. Photo blurry — please re-upload a clearer passport page"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={busyKycUserId === userDetail.id}
+                        onClick={() => void handleKycUpdate('Verified')}
+                        className="px-4 py-2 rounded-lg text-sm font-bold bg-brand-600 text-white disabled:opacity-50">
+                        Mark verified
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyKycUserId === userDetail.id}
+                        onClick={() => void handleKycUpdate('Rejected')}
+                        className="px-4 py-2 rounded-lg text-sm font-bold text-red-700 border border-red-200 disabled:opacity-50">
+                        Reject
+                      </button>
+                      {userDetail.kycStatus === 'Rejected' && (
+                        <button
+                          type="button"
+                          disabled={busyKycUserId === userDetail.id}
+                          onClick={() => void handleKycUpdate('Pending')}
+                          className="px-4 py-2 rounded-lg text-sm font-bold border border-slate-200 disabled:opacity-50">
+                          Back to pending
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {userDetail.campaigns.length > 0 && (
+                  <div className="border-t border-slate-100 pt-4">
+                    <h3 className="text-sm font-bold text-slate-800 mb-2">Campaigns</h3>
+                    <ul className="space-y-2">
+                      {userDetail.campaigns.map((c) => (
+                        <li
+                          key={c.id}
+                          className="flex flex-wrap items-center justify-between gap-2 text-sm border border-slate-100 rounded-lg px-3 py-2">
+                          <div>
+                            <span className="font-semibold text-slate-900">{c.title}</span>
+                            <span className="text-xs text-slate-500 ml-2">{c.status}</span>
+                            <div className="text-xs text-slate-500">
+                              Raised {formatGmd(c.raisedAmount)} · {formatDate(c.createdAt)}
+                            </div>
+                          </div>
+                          {c.hasVerificationDocument ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleOpenVerificationDocument(c.id)}
+                              className="text-xs font-bold text-brand-700 hover:underline">
+                              View ID
+                            </button>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+            </div>
           )}
 
           {tab === 'admins' && canAccess('admins') && (
             <div className="space-y-8">
+              {user.isPlatformOwner ? (
+                <form
+                  onSubmit={(e) => void handlePromoteAdmin(e)}
+                  className="bg-white rounded-xl border border-brand-200 p-5 shadow-sm space-y-4 max-w-2xl">
+                  <h2 className="font-display font-bold text-slate-900">Promote registered user</h2>
+                  <p className="text-sm text-slate-600">
+                    Turn an existing account into an admin. Only you (platform owner) can do this — invited
+                    admins cannot. The person keeps their current password / Google sign-in.
+                  </p>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="promote-email">
+                      User email
+                    </label>
+                    <input
+                      id="promote-email"
+                      type="email"
+                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                      value={promoteEmail}
+                      onChange={(e) => setPromoteEmail(e.target.value)}
+                      required
+                      placeholder="already-registered@example.com"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={promoteFull}
+                        onChange={(e) => setPromoteFull(e.target.checked)}
+                      />
+                      Full access
+                    </label>
+                    {!promoteFull && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pl-1">
+                        {ALL_PANEL_KEYS.map((k) => (
+                          <label key={k} className="flex items-center gap-2 text-xs text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={promoteKeys.includes(k)}
+                              onChange={() => toggleKey(k, promoteKeys, setPromoteKeys)}
+                            />
+                            <span>{PANEL_KEY_LABEL[k]}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={promoteSubmitting}
+                    className="px-4 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-bold hover:bg-brand-700 disabled:opacity-50">
+                    {promoteSubmitting ? 'Promoting…' : 'Promote to admin'}
+                  </button>
+                </form>
+              ) : (
+                <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-sm text-amber-950 max-w-2xl">
+                  Only the platform owner can promote an existing user to admin or demote an admin.
+                </div>
+              )}
+
               <form
                 onSubmit={handleCreateAdmin}
                 className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4 max-w-2xl">
@@ -1681,7 +2074,7 @@ export function AdminPage() {
                       <th className="px-4 py-3">Admin</th>
                       <th className="px-4 py-3">Status</th>
                       <th className="px-4 py-3 min-w-[280px]">Access</th>
-                      <th className="px-4 py-3 text-right">Save</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1699,11 +2092,18 @@ export function AdminPage() {
                             <td className="px-4 py-3">
                               <div className="font-bold text-slate-900">{row.fullName}</div>
                               <div className="text-xs text-slate-500">{row.email}</div>
-                              {row.id === user.id && (
-                                <span className="mt-1 inline-block text-[10px] font-bold uppercase tracking-wide text-brand-700">
-                                  You
-                                </span>
-                              )}
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {row.id === user.id && (
+                                  <span className="inline-block text-[10px] font-bold uppercase tracking-wide text-brand-700">
+                                    You
+                                  </span>
+                                )}
+                                {row.isPlatformOwner && (
+                                  <span className="inline-block text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded">
+                                    Platform owner
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-4 py-3">
                               <span
@@ -1765,13 +2165,24 @@ export function AdminPage() {
                               )}
                             </td>
                             <td className="px-4 py-3 text-right">
-                              <button
-                                type="button"
-                                disabled={busyAccountId === row.id}
-                                onClick={() => void handleSaveAccountPermissions(row)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white disabled:opacity-50">
-                                {busyAccountId === row.id ? '…' : 'Save'}
-                              </button>
+                              <div className="flex flex-col items-end gap-2">
+                                <button
+                                  type="button"
+                                  disabled={busyAccountId === row.id}
+                                  onClick={() => void handleSaveAccountPermissions(row)}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white disabled:opacity-50">
+                                  {busyAccountId === row.id ? '…' : 'Save'}
+                                </button>
+                                {user.isPlatformOwner && !row.isPlatformOwner && (
+                                  <button
+                                    type="button"
+                                    disabled={busyDemoteId === row.id}
+                                    onClick={() => void handleDemoteAdmin(row)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-bold text-red-700 border border-red-200 disabled:opacity-50">
+                                    {busyDemoteId === row.id ? '…' : 'Demote'}
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );

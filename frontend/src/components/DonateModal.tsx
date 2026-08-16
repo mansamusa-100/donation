@@ -54,7 +54,6 @@ export function DonateModal({
   const [platformBankAccounts, setPlatformBankAccounts] = useState<PlatformBankAccount[] | null>(null);
   const [selectedBankAccountId, setSelectedBankAccountId] = useState('');
   const [easypayCheckout, setEasypayCheckout] = useState(false);
-  const [yonnaPhone, setYonnaPhone] = useState('');
   const [easypayApsGatewayCode, setEasypayApsGatewayCode] = useState<string | null>(null);
   const [easypayApsBookingId, setEasypayApsBookingId] = useState<string | null>(null);
   const [apsPhase, setApsPhase] = useState<'idle' | 'auth' | 'otp'>('idle');
@@ -218,39 +217,6 @@ export function DonateModal({
     }
   };
 
-  const handlePayWithYonnaEasypay = async () => {
-    if (!validateParticipantDetails()) {
-      return;
-    }
-    setError('');
-    setIsProcessing(true);
-    try {
-      const res = await api.easypayPartnerCheckout({
-        ...donatePayloadBase(),
-        channel: 'yonna',
-        ...(yonnaPhone.trim() ? { payerPhone: yonnaPhone.trim() } : {})
-      });
-      if (res.kind !== 'redirect') {
-        setError('Unexpected DPay response for Yonna.');
-        setIsProcessing(false);
-        return;
-      }
-      setEasypayPendingWalletSession(res.partnerExternalBookingId, {
-        launchUrl: res.launchUrl,
-        qrPayload: res.qrPayload,
-        channel: 'yonna'
-      });
-      const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
-      const autolaunch = isCoarseMobileDevice() ? '&autolaunch=1' : '';
-      window.location.assign(
-        `${window.location.origin}${base}/payment/easypay/pending?ref=${encodeURIComponent(res.partnerExternalBookingId)}${autolaunch}`
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not start Yonna checkout.');
-      setIsProcessing(false);
-    }
-  };
-
   const startEasypayApsOrder = async () => {
     if (!validateParticipantDetails()) {
       return;
@@ -407,7 +373,6 @@ export function DonateModal({
     setPaymentWallet('wave');
     setPaymentProviders(null);
     setEasypayCheckout(false);
-    setYonnaPhone('');
     setEasypayApsGatewayCode(null);
     setEasypayApsBookingId(null);
     setApsPhase('idle');

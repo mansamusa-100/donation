@@ -453,6 +453,7 @@ export function DashboardPage() {
                         key={c.id}
                         campaign={c}
                         payoutMethods={payoutMethods}
+                        kycStatus={user.kycStatus}
                         busy={withdrawalBusySlug === c.slug || lifecycleBusySlug === c.slug}
                         onWithdraw={submitWithdrawal}
                         onConfirmEnd={handleConfirmEnd}
@@ -622,6 +623,7 @@ export function DashboardPage() {
 function CampaignRow({
   campaign,
   payoutMethods,
+  kycStatus,
   onWithdraw,
   onConfirmEnd,
   onRequestExtension,
@@ -630,6 +632,7 @@ function CampaignRow({
 }: {
   campaign: Campaign;
   payoutMethods: UserPayoutMethod[];
+  kycStatus?: 'Unverified' | 'Pending' | 'Verified' | 'Rejected';
   onWithdraw: (slug: string, amount: number, payoutMethodId: string, note: string) => Promise<void>;
   onConfirmEnd: (slug: string) => Promise<void>;
   onRequestExtension: (slug: string, endDate: string, reason: string) => Promise<void>;
@@ -657,6 +660,8 @@ function CampaignRow({
   const donationPlatformFeeTotal = campaign.donationPlatformFeeTotal ?? 0;
   const netRaisedAmount = campaign.netRaisedAmount ?? Math.max(0, campaign.raisedAmount - donationPlatformFeeTotal);
   const canWithdraw = (status === 'Active' || status === 'Closed') && available > 0;
+  const kycOk = kycStatus === 'Verified';
+  const canRequestWithdraw = canWithdraw && kycOk;
   const fundraisingPeriodEnded = campaign.fundraisingPeriodEnded === true;
   const acceptingDonations = campaign.acceptingDonations !== false;
   const canConfirmEnd = campaign.canConfirmEnd === true;
@@ -919,7 +924,19 @@ function CampaignRow({
         </form>
       )}
 
-      {canWithdraw && (
+      {canWithdraw && !kycOk && (
+        <div className="pl-0 sm:pl-24 border-t border-surface-100 pt-4">
+          <p className="text-sm text-amber-900 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+            {kycStatus === 'Pending'
+              ? 'Identity verification is under review. You can request a withdrawal once an admin verifies your ID.'
+              : kycStatus === 'Rejected'
+                ? 'Your ID was rejected. Upload a clearer document when creating a campaign (or contact support), then wait for re-approval before withdrawing.'
+                : 'Identity verification is required before withdrawals. Upload a government ID with your campaign and wait for admin approval.'}
+          </p>
+        </div>
+      )}
+
+      {canRequestWithdraw && (
         <form
           onSubmit={(e) => void handleWithdrawSubmit(e)}
           className="pl-0 sm:pl-24 border-t border-surface-100 pt-4 space-y-3">

@@ -18,6 +18,7 @@ import type {
   AdminNotificationSummary,
   AdminPaged,
   AdminUserRow,
+  AdminUserDetail,
   AdminWithdrawalRequestRow
 } from '../types/admin';
 import type { PayoutMethodType, PayoutDetails, UserPayoutMethod } from '../types/payout';
@@ -410,6 +411,27 @@ export const api = {
     );
   },
 
+  getAdminUserKycDocumentBlob(userId: string) {
+    return requestBlob(`/api/admin/users/${encodeURIComponent(userId)}/kyc-document`);
+  },
+
+  getAdminUser(userId: string) {
+    return request<AdminUserDetail>(`/api/admin/users/${encodeURIComponent(userId)}`);
+  },
+
+  updateAdminUserKyc(
+    userId: string,
+    payload: { status: 'Verified' | 'Rejected' | 'Pending'; notes?: string }
+  ) {
+    return request<{ message: string; user: AdminUserRow }>(
+      `/api/admin/users/${encodeURIComponent(userId)}/kyc`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
   createDonation(slug: string, payload: ApiCreateDonationInput) {
     return request<Campaign>(`/api/campaigns/${slug}/donations`, {
       method: 'POST',
@@ -740,6 +762,33 @@ export const api = {
     }>('/api/admin/accounts', {
       method: 'POST',
       body: JSON.stringify(payload)
+    });
+  },
+
+  promoteAdminAccount(payload: { email: string; adminPanelPermissions: string[] }) {
+    return request<{
+      message: string;
+      user: {
+        id: string;
+        email: string;
+        fullName: string;
+        phoneNumber?: string | null;
+        role: string;
+        adminPanelPermissions: string[];
+      };
+    }>('/api/admin/accounts/promote', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  demoteAdminAccount(userId: string) {
+    return request<{
+      message: string;
+      user: { id: string; email: string; fullName: string; role: string };
+    }>(`/api/admin/accounts/${encodeURIComponent(userId)}/demote`, {
+      method: 'POST',
+      body: JSON.stringify({})
     });
   },
 

@@ -16,7 +16,7 @@ export function ContactPage() {
   return (
     <SiteArticleLayout
       title="Contact us"
-      subtitle="Call, WhatsApp, or email — we are happy to help with account, donation, and campaign questions."
+      subtitle="Call, WhatsApp, or email, we are happy to help with account, donation, and campaign questions."
     >
       <section className="space-y-4">
         <h2 className="font-display text-xl font-bold text-surface-900">Phone</h2>
@@ -76,7 +76,7 @@ export function ContactPage() {
       <section className="space-y-3">
         <h2 className="font-display text-xl font-bold text-surface-900">Response times</h2>
         <p>
-          Typical replies within a few business days. Urgent fraud or safety issues—please mark the subject line
+          Typical replies within a few business days. Urgent fraud or safety issues, please mark the subject line
           clearly so we can prioritize.
         </p>
       </section>

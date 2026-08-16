@@ -1,7 +1,7 @@
 import { Router, type Request } from 'express';
 import fs from 'node:fs/promises';
 import { z } from 'zod';
-import { CampaignStatus, Prisma, WithdrawalRequestStatus } from '@prisma/client';
+import { CampaignStatus, KycStatus, Prisma, WithdrawalRequestStatus } from '@prisma/client';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { prisma } from '../lib/prisma.js';
 import { uploadsFsPathFromPublicUrl } from '../lib/uploadPaths.js';
@@ -38,8 +38,13 @@ import {
 import { sendBankTransferRejectedEmail } from '../lib/mail.js';
 import { HttpError } from '../lib/HttpError.js';
 import { boundedMoneySchema } from '../lib/money.js';
+import { markOrganizerKycVerifiedOnCampaignApprove } from '../lib/userKyc.js';
 import { newPasswordSchema } from '../lib/passwordPolicy.js';
 import { normalizeEmail } from '../lib/normalizeEmail.js';
+import {
+  assertPlatformOwner,
+  isPlatformOwnerEmail
+} from '../lib/platformOwner.js';
 
 const adminRouter = Router();
 
@@ -393,7 +398,9 @@ adminRouter.get(
               id: true,
               fullName: true,
               email: true,
-              phoneNumber: true
+              phoneNumber: true,
+              kycStatus: true,
+              kycDocumentUrl: true
             }
           }
         },
@@ -411,6 +418,16 @@ adminRouter.get(
           const last = await getLastDonationAt(prisma, c.id);
           return {
             ...c,
+            creator: c.creator
+              ? {
+                  id: c.creator.id,
+                  fullName: c.creator.fullName,
+                  email: c.creator.email,
+                  phoneNumber: c.creator.phoneNumber,
+                  kycStatus: c.creator.kycStatus,
+                  hasKycDocument: Boolean(c.creator.kycDocumentUrl)
+                }
+              : null,
             daysLeft: computeDaysLeftFromEndsAt(c.endsAt),
             lastDonationAt: last?.toISOString() ?? null,
             inactive60Days: isInactiveForAdminEnd(last, c.createdAt)
@@ -439,7 +456,9 @@ adminRouter.get(
             select: {
               id: true,
               fullName: true,
-              email: true
+              email: true,
+              kycStatus: true,
+              kycDocumentUrl: true
             }
           }
         },
@@ -457,6 +476,15 @@ adminRouter.get(
           const last = await getLastDonationAt(prisma, c.id);
           return {
             ...c,
+            creator: c.creator
+              ? {
+                  id: c.creator.id,
+                  fullName: c.creator.fullName,
+                  email: c.creator.email,
+                  kycStatus: c.creator.kycStatus,
+                  hasKycDocument: Boolean(c.creator.kycDocumentUrl)
+                }
+              : null,
             daysLeft: computeDaysLeftFromEndsAt(c.endsAt),
             lastDonationAt: last?.toISOString() ?? null,
             inactive60Days:
@@ -473,20 +501,27 @@ adminRouter.get(
 
 adminRouter.get(
   '/campaigns/:campaignId/verification-document',
-  requireAnyAdminPanel(['queue', 'campaigns']),
+  requireAnyAdminPanel(['queue', 'campaigns', 'users', 'withdrawals']),
   asyncHandler(async (req: AuthRequest, res) => {
     const campaignId = String(req.params.campaignId);
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { verificationDocumentUrl: true }
+      select: {
+        verificationDocumentUrl: true,
+        creatorId: true,
+        creator: { select: { kycDocumentUrl: true } }
+      }
     });
 
-    if (!campaign?.verificationDocumentUrl) {
+    const documentUrl =
+      campaign?.verificationDocumentUrl || campaign?.creator?.kycDocumentUrl || null;
+
+    if (!documentUrl) {
       res.status(404).json({ message: 'No verification document for this campaign' });
       return;
     }
 
-    const fsPath = uploadsFsPathFromPublicUrl(campaign.verificationDocumentUrl);
+    const fsPath = uploadsFsPathFromPublicUrl(documentUrl);
     if (!fsPath) {
       res.status(404).json({ message: 'Invalid document path' });
       return;
@@ -539,6 +574,24 @@ adminRouter.patch(
         donations: true
       }
     });
+
+    if (body.status === 'Active') {
+      const kycUpdated = await markOrganizerKycVerifiedOnCampaignApprove({
+        creatorId: updatedCampaign.creatorId,
+        adminId: req.userId,
+        documentUrl: updatedCampaign.verificationDocumentUrl
+      });
+      if (kycUpdated) {
+        await recordActivity({
+          type: 'USER_KYC_CHANGED',
+          title: `KYC verified for organizer of "${updatedCampaign.title}"`,
+          detail: 'Auto-verified when campaign was approved',
+          campaignId: updatedCampaign.id,
+          userId: updatedCampaign.creatorId,
+          actorId: req.userId ?? null
+        });
+      }
+    }
 
     await recordActivity({
       type: 'CAMPAIGN_STATUS_CHANGED',
@@ -597,7 +650,14 @@ adminRouter.get(
             }
           },
           user: {
-            select: { id: true, fullName: true, email: true, phoneNumber: true }
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              phoneNumber: true,
+              kycStatus: true,
+              kycDocumentUrl: true
+            }
           }
         }
       })
@@ -608,6 +668,14 @@ adminRouter.get(
         ...w,
         createdAt: w.createdAt.toISOString(),
         updatedAt: w.updatedAt.toISOString(),
+        user: {
+          id: w.user.id,
+          fullName: w.user.fullName,
+          email: w.user.email,
+          phoneNumber: w.user.phoneNumber,
+          kycStatus: w.user.kycStatus,
+          hasKycDocument: Boolean(w.user.kycDocumentUrl)
+        },
         ...serializeWithdrawalPayout(w)
       })),
       total,
@@ -943,6 +1011,10 @@ adminRouter.get(
           role: true,
           isActive: true,
           createdAt: true,
+          kycStatus: true,
+          kycDocumentUrl: true,
+          kycSubmittedAt: true,
+          kycReviewedAt: true,
           _count: {
             select: {
               campaigns: true,
@@ -958,7 +1030,242 @@ adminRouter.get(
       })
     ]);
 
-    res.json({ items: users, total, page, pageSize });
+    res.json({
+      items: users.map((u) => ({
+        id: u.id,
+        email: u.email,
+        fullName: u.fullName,
+        phoneNumber: u.phoneNumber,
+        role: u.role,
+        isActive: u.isActive,
+        createdAt: u.createdAt,
+        kycStatus: u.kycStatus,
+        hasKycDocument: Boolean(u.kycDocumentUrl),
+        kycSubmittedAt: u.kycSubmittedAt?.toISOString() ?? null,
+        kycReviewedAt: u.kycReviewedAt?.toISOString() ?? null,
+        _count: u._count
+      })),
+      total,
+      page,
+      pageSize
+    });
+  })
+);
+
+adminRouter.get(
+  '/users/:userId',
+  requireAdminPanel('users'),
+  asyncHandler(async (req: Request, res) => {
+    const userId = String(req.params.userId);
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phoneNumber: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        emailVerifiedAt: true,
+        kycStatus: true,
+        kycDocumentUrl: true,
+        kycSubmittedAt: true,
+        kycReviewedAt: true,
+        kycNotes: true,
+        kycReviewer: {
+          select: { id: true, fullName: true, email: true }
+        },
+        campaigns: {
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+          select: {
+            id: true,
+            slug: true,
+            title: true,
+            status: true,
+            raisedAmount: true,
+            verificationDocumentUrl: true,
+            createdAt: true
+          }
+        },
+        _count: {
+          select: {
+            campaigns: true,
+            donations: true,
+            withdrawalRequests: true
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+
+    res.json({
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      phoneNumber: user.phoneNumber,
+      role: user.role,
+      isActive: user.isActive,
+      createdAt: user.createdAt.toISOString(),
+      emailVerified: user.emailVerifiedAt != null,
+      kycStatus: user.kycStatus,
+      hasKycDocument: Boolean(user.kycDocumentUrl),
+      kycSubmittedAt: user.kycSubmittedAt?.toISOString() ?? null,
+      kycReviewedAt: user.kycReviewedAt?.toISOString() ?? null,
+      kycNotes: user.kycNotes,
+      kycReviewer: user.kycReviewer,
+      campaigns: user.campaigns.map((c) => ({
+        ...c,
+        hasVerificationDocument: Boolean(c.verificationDocumentUrl || user.kycDocumentUrl),
+        createdAt: c.createdAt.toISOString()
+      })),
+      _count: user._count
+    });
+  })
+);
+
+adminRouter.get(
+  '/users/:userId/kyc-document',
+  requireAnyAdminPanel(['users', 'withdrawals', 'queue', 'campaigns']),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = String(req.params.userId);
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { kycDocumentUrl: true, fullName: true, email: true }
+    });
+
+    if (!user?.kycDocumentUrl) {
+      res.status(404).json({ message: 'No KYC document on file for this user' });
+      return;
+    }
+
+    const fsPath = uploadsFsPathFromPublicUrl(user.kycDocumentUrl);
+    if (!fsPath) {
+      res.status(404).json({ message: 'Invalid document path' });
+      return;
+    }
+
+    try {
+      await fs.access(fsPath);
+    } catch {
+      res.status(404).json({ message: 'File not found' });
+      return;
+    }
+
+    await recordActivity({
+      type: 'USER_KYC_VIEWED',
+      title: `Viewed KYC document for ${user.email}`,
+      detail: user.fullName,
+      userId,
+      actorId: req.userId ?? null
+    });
+
+    res.sendFile(fsPath, { dotfiles: 'deny' });
+  })
+);
+
+const patchUserKycSchema = z.object({
+  status: z.enum(['Verified', 'Rejected', 'Pending']),
+  notes: z.string().trim().max(2000).optional()
+});
+
+adminRouter.patch(
+  '/users/:userId/kyc',
+  requireAdminPanel('users'),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = String(req.params.userId);
+    const body = patchUserKycSchema.parse(req.body);
+
+    const existing = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        kycStatus: true,
+        kycDocumentUrl: true,
+        role: true
+      }
+    });
+
+    if (!existing) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+
+    if (existing.role === 'ADMIN') {
+      res.status(400).json({ message: 'Admin accounts do not use organizer KYC' });
+      return;
+    }
+
+    if ((body.status === 'Verified' || body.status === 'Rejected') && !existing.kycDocumentUrl) {
+      res.status(400).json({
+        message: 'This user has no ID document on file. Ask them to upload one first.'
+      });
+      return;
+    }
+
+    if (body.status === 'Rejected' && !body.notes?.trim()) {
+      res.status(400).json({ message: 'Add a short note explaining why KYC was rejected.' });
+      return;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        kycStatus: body.status as KycStatus,
+        kycNotes: body.notes?.trim() || null,
+        ...(body.status === 'Pending'
+          ? {
+              kycReviewedAt: null,
+              kycReviewedByAdminId: null
+            }
+          : {
+              kycReviewedAt: new Date(),
+              kycReviewedByAdminId: req.userId ?? null
+            })
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        kycStatus: true,
+        kycDocumentUrl: true,
+        kycSubmittedAt: true,
+        kycReviewedAt: true,
+        kycNotes: true
+      }
+    });
+
+    await recordActivity({
+      type: 'USER_KYC_CHANGED',
+      title: `KYC ${body.status.toLowerCase()} for ${updated.email}`,
+      detail:
+        existing.kycStatus !== body.status
+          ? `Previous: ${existing.kycStatus}${body.notes ? ` · ${body.notes}` : ''}`
+          : body.notes ?? null,
+      userId: updated.id,
+      actorId: req.userId ?? null
+    });
+
+    res.json({
+      message: `KYC marked ${body.status}`,
+      user: {
+        id: updated.id,
+        email: updated.email,
+        fullName: updated.fullName,
+        kycStatus: updated.kycStatus,
+        hasKycDocument: Boolean(updated.kycDocumentUrl),
+        kycSubmittedAt: updated.kycSubmittedAt?.toISOString() ?? null,
+        kycReviewedAt: updated.kycReviewedAt?.toISOString() ?? null,
+        kycNotes: updated.kycNotes
+      }
+    });
   })
 );
 
@@ -1091,6 +1398,12 @@ const createAdminAccountSchema = z.object({
   adminPanelPermissions: z.array(z.string()).default([])
 });
 
+const promoteAdminSchema = z.object({
+  email: z.string().email(),
+  /** Empty = full admin panel; otherwise only these areas. */
+  adminPanelPermissions: z.array(z.string()).default([])
+});
+
 const patchAdminPermissionsSchema = z.object({
   adminPanelPermissions: z.array(z.string())
 });
@@ -1115,7 +1428,8 @@ adminRouter.get(
     res.json(
       rows.map((r) => ({
         ...r,
-        accessScope: r.adminPanelPermissions.length === 0 ? 'full' : 'limited'
+        accessScope: r.adminPanelPermissions.length === 0 ? 'full' : 'limited',
+        isPlatformOwner: isPlatformOwnerEmail(r.email)
       }))
     );
   })
@@ -1168,6 +1482,150 @@ adminRouter.post(
     });
 
     res.status(201).json(created);
+  })
+);
+
+/**
+ * Promote an existing registered USER to ADMIN.
+ * Platform owner only (OWNER_EMAIL) — invited admins cannot do this.
+ */
+adminRouter.post(
+  '/accounts/promote',
+  requireAdminPanel('admins'),
+  asyncHandler(async (req: AuthRequest, res) => {
+    await assertPlatformOwner(req);
+    const body = promoteAdminSchema.parse(req.body);
+    assertCanAssignPermissions(body.adminPanelPermissions);
+
+    const email = normalizeEmail(body.email);
+    const existing = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } }
+    });
+
+    if (!existing) {
+      res.status(404).json({
+        message: 'No registered user found with that email. Ask them to sign up first, or create a new admin account.'
+      });
+      return;
+    }
+
+    if (existing.accountClosedAt) {
+      res.status(400).json({ message: 'This account is closed and cannot be promoted.' });
+      return;
+    }
+
+    if (!existing.isActive) {
+      res.status(400).json({
+        message: 'Reactivate this user first (Users tab), then promote them to admin.'
+      });
+      return;
+    }
+
+    if (existing.role === 'ADMIN') {
+      res.status(400).json({ message: 'This user is already an admin.' });
+      return;
+    }
+
+    if (isPlatformOwnerEmail(existing.email)) {
+      // Should already be ADMIN via bootstrap; defensive.
+      res.status(400).json({ message: 'This email is reserved for the platform owner.' });
+      return;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        role: 'ADMIN',
+        adminPanelPermissions: body.adminPanelPermissions,
+        emailVerifiedAt: existing.emailVerifiedAt ?? new Date(),
+        tokenVersion: { increment: 1 }
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phoneNumber: true,
+        role: true,
+        adminPanelPermissions: true
+      }
+    });
+
+    await recordActivity({
+      type: 'ADMIN_ACCOUNT_PROMOTED',
+      title: `Promoted to admin: ${updated.email}`,
+      detail: `Permissions: ${
+        updated.adminPanelPermissions.length ? updated.adminPanelPermissions.join(',') : 'full'
+      }`,
+      userId: updated.id,
+      actorId: req.userId ?? null
+    });
+
+    res.json({
+      message: `${updated.fullName} is now an admin. They should sign out and sign back in.`,
+      user: updated
+    });
+  })
+);
+
+/**
+ * Demote an invited admin back to USER.
+ * Platform owner only. Cannot demote the platform owner account.
+ */
+adminRouter.post(
+  '/accounts/:userId/demote',
+  requireAdminPanel('admins'),
+  asyncHandler(async (req: AuthRequest, res) => {
+    await assertPlatformOwner(req);
+    const userId = String(req.params.userId);
+
+    if (userId === req.userId) {
+      res.status(400).json({ message: 'You cannot demote your own platform owner account.' });
+      return;
+    }
+
+    const target = await prisma.user.findUnique({ where: { id: userId } });
+    if (!target) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+
+    if (target.role !== 'ADMIN') {
+      res.status(400).json({ message: 'User is not an admin' });
+      return;
+    }
+
+    if (isPlatformOwnerEmail(target.email)) {
+      res.status(400).json({ message: 'The platform owner account cannot be demoted.' });
+      return;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        role: 'USER',
+        adminPanelPermissions: [],
+        tokenVersion: { increment: 1 }
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true
+      }
+    });
+
+    await recordActivity({
+      type: 'ADMIN_ACCOUNT_DEMOTED',
+      title: `Demoted from admin: ${updated.email}`,
+      detail: `Now role: ${updated.role}`,
+      userId: updated.id,
+      actorId: req.userId ?? null
+    });
+
+    res.json({
+      message: `${updated.fullName} is now a regular user.`,
+      user: updated
+    });
   })
 );
 

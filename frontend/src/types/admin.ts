@@ -27,6 +27,8 @@ export interface AdminCampaignCreator {
   fullName: string;
   email: string;
   phoneNumber?: string | null;
+  kycStatus?: 'Unverified' | 'Pending' | 'Verified' | 'Rejected';
+  hasKycDocument?: boolean;
 }
 
 export interface AdminCampaign {
@@ -88,7 +90,27 @@ export interface AdminUserRow {
   role: 'ADMIN' | 'USER';
   isActive: boolean;
   createdAt: string;
+  kycStatus: 'Unverified' | 'Pending' | 'Verified' | 'Rejected';
+  hasKycDocument: boolean;
+  kycSubmittedAt?: string | null;
+  kycReviewedAt?: string | null;
   _count: { campaigns: number; donations: number };
+}
+
+export interface AdminUserDetail extends AdminUserRow {
+  emailVerified: boolean;
+  kycNotes: string | null;
+  kycReviewer: { id: string; fullName: string; email: string } | null;
+  campaigns: Array<{
+    id: string;
+    slug: string;
+    title: string;
+    status: string;
+    raisedAmount: number;
+    hasVerificationDocument: boolean;
+    createdAt: string;
+  }>;
+  _count: { campaigns: number; donations: number; withdrawalRequests: number };
 }
 
 export interface AdminActivityItem {
@@ -118,9 +140,13 @@ export const AUDIT_EVENT_TYPES = [
   'CAMPAIGN_SUBMITTED',
   'CAMPAIGN_STATUS_CHANGED',
   'USER_STATUS_CHANGED',
+  'USER_KYC_CHANGED',
+  'USER_KYC_VIEWED',
   'WITHDRAWAL_REQUESTED',
   'WITHDRAWAL_STATUS_CHANGED',
   'ADMIN_ACCOUNT_CREATED',
+  'ADMIN_ACCOUNT_PROMOTED',
+  'ADMIN_ACCOUNT_DEMOTED',
   'ADMIN_PERMISSIONS_CHANGED',
   'EASYPAY_PROVISION',
   'BANK_TRANSFER_CONFIRMED',
@@ -160,6 +186,8 @@ export interface AdminAccountRow {
   adminPanelPermissions: string[];
   createdAt: string;
   accessScope: 'full' | 'limited';
+  /** True when this row is the OWNER_EMAIL bootstrap account. */
+  isPlatformOwner?: boolean;
 }
 
 export type AdminWithdrawalStatus = 'Pending' | 'Approved' | 'Rejected' | 'Paid';
@@ -189,5 +217,7 @@ export interface AdminWithdrawalRequestRow extends WithdrawalPayoutInfo {
     fullName: string;
     email: string;
     phoneNumber?: string | null;
+    kycStatus?: 'Unverified' | 'Pending' | 'Verified' | 'Rejected';
+    hasKycDocument?: boolean;
   };
 }

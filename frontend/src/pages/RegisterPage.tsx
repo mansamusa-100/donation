@@ -128,7 +128,7 @@ export function RegisterPage() {
                 name="phone"
                 value={formData.phone}
                 onChange={handleChange}
-                placeholder="(+222) 123-4567"
+                placeholder="(+220) 123-4567"
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>

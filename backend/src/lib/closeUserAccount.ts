@@ -252,7 +252,13 @@ export async function closeUserAccount(
         googleId: null,
         password: null,
         passwordResetToken: null,
-        passwordResetExpires: null
+        passwordResetExpires: null,
+        kycStatus: 'Unverified',
+        kycDocumentUrl: null,
+        kycSubmittedAt: null,
+        kycReviewedAt: null,
+        kycReviewedByAdminId: null,
+        kycNotes: null
       }
     });
 

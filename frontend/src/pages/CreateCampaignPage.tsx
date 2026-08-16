@@ -48,7 +48,7 @@ function stepLabel(n: number) {
 }
 
 export function CreateCampaignPage() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [categories, setCategories] = useState<{ name: Category }[]>([]);
   const [step, setStep] = useState(1);
@@ -80,6 +80,20 @@ export function CreateCampaignPage() {
   const [verificationFileName, setVerificationFileName] = useState('');
   const [verificationUploading, setVerificationUploading] = useState(false);
   const [verificationFieldError, setVerificationFieldError] = useState('');
+  const [reusingExistingId, setReusingExistingId] = useState(false);
+
+  useEffect(() => {
+    if (!user?.kycDocumentUrl) {
+      return;
+    }
+    if (user.kycStatus === 'Verified' || user.kycStatus === 'Pending') {
+      setVerificationUrl(user.kycDocumentUrl);
+      setVerificationFileName(
+        user.kycStatus === 'Verified' ? 'Verified ID on file' : 'ID on file (under review)'
+      );
+      setReusingExistingId(true);
+    }
+  }, [user?.kycDocumentUrl, user?.kycStatus]);
 
   const [termsAccepted, setTermsAccepted] = useState(false);
 
@@ -199,6 +213,7 @@ export function CreateCampaignPage() {
     }
     setVerificationFileName(file.name);
     setVerificationUrl(null);
+    setReusingExistingId(false);
     setVerificationUploading(true);
     try {
       const { url } = await api.uploadVerificationId(file);
@@ -427,6 +442,12 @@ export function CreateCampaignPage() {
         contactPhone: formData.contactPhone.trim() || null,
         contactWhatsApp: formData.contactWhatsApp.trim() || null
       });
+
+      try {
+        await refreshUser();
+      } catch {
+        /* non-fatal */
+      }
 
       navigate('/dashboard', {
         replace: true,
@@ -768,13 +789,32 @@ export function CreateCampaignPage() {
                   <p>
                     Upload a clear photo or scan of a government-issued ID (e.g. national ID or
                     passport). This is only used by our team to reduce fraud and is not shown on your
-                    public campaign page.
+                    public campaign page. Verified organizers can withdraw raised funds.
                   </p>
+                  {user?.kycStatus === 'Verified' && (
+                    <p className="mt-2 text-emerald-800 font-medium">
+                      Your ID is already verified. You can continue with the document on file, or upload a
+                      new one (new uploads need re-review).
+                    </p>
+                  )}
+                  {user?.kycStatus === 'Pending' && (
+                    <p className="mt-2 text-amber-800 font-medium">
+                      Your ID is under review. You can continue with the document on file.
+                    </p>
+                  )}
+                  {user?.kycStatus === 'Rejected' && (
+                    <p className="mt-2 text-red-700 font-medium">
+                      Previous ID was rejected
+                      {user.kycNotes ? `: ${user.kycNotes}` : ''}. Please upload a clearer document.
+                    </p>
+                  )}
                 </div>
               </div>
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-surface-200 rounded-2xl p-8 cursor-pointer hover:border-brand-300 hover:bg-brand-50/40 transition-colors">
                 <FileText className="w-10 h-10 text-brand-600 mb-2" />
-                <span className="text-sm font-semibold text-surface-800">Upload ID document</span>
+                <span className="text-sm font-semibold text-surface-800">
+                  {reusingExistingId ? 'Replace ID document' : 'Upload ID document'}
+                </span>
                 <span className="text-xs text-surface-500 mt-1">JPEG, PNG, WebP, or PDF · up to 10MB</span>
                 <input
                   type="file"
@@ -794,7 +834,8 @@ export function CreateCampaignPage() {
               )}
               {verificationUrl && verificationFileName && (
                 <p className="text-sm text-emerald-700 flex items-center gap-1">
-                  <CheckCircle2 size={16} /> Received: {verificationFileName}
+                  <CheckCircle2 size={16} />{' '}
+                  {reusingExistingId ? verificationFileName : `Received: ${verificationFileName}`}
                 </p>
               )}
             </div>

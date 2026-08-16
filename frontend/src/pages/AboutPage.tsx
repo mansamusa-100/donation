@@ -42,7 +42,7 @@ export function AboutPage() {
               <span className="text-brand-600">leaves a blessing behind</span>
             </h1>
             <p className="text-lg md:text-xl text-surface-600 leading-relaxed text-balance max-w-2xl mx-auto">
-              <em>Barakah</em> — the quiet abundance that grows when something is given with a sincere
+              <em>Barakah Fund</em>; the quiet abundance that grows when something is given with a sincere
               heart. It is the name we chose, and the promise we keep: that no kindness placed here
               is ever wasted.
             </p>
@@ -58,19 +58,19 @@ export function AboutPage() {
             <p>
               Somewhere tonight, a mother is counting coins for a hospital bill. A student is one
               term of school fees away from a different life. A shopkeeper is one small loan away
-              from feeding a whole street. Their stories are not rare — they are everywhere. What is
+              from feeding a whole street. Their stories are not rare, they are everywhere. What is
               rare is a bridge between the people who need help and the many, many people who would
               gladly give it.
             </p>
             <p>
-              {BRAND_NAME} was born to be that bridge. Not a marketplace, not a charity — a meeting
+              {BRAND_NAME} was born to be that bridge. Not a marketplace, not a charity, a meeting
               place. A place where a need can be spoken plainly, and answered generously. Where the
               distance between <em>"I wish I could help"</em> and <em>"I just did"</em> is a single
               tap on the phone already in your hand.
             </p>
             <p>
               We believe generosity is not a luxury of the wealthy. It is a habit of the
-              willing — a dalasi here, a hundred there, gathered like raindrops until a river moves.
+              willing, a dalasi here, a hundred there, gathered like raindrops until a river moves.
               Our work is simply to make sure every drop arrives where it was meant to go.
             </p>
           </motion.div>
@@ -95,7 +95,7 @@ export function AboutPage() {
               {
                 icon: SunriseIcon,
                 title: 'Start in minutes',
-                text: 'Tell your story, set your goal, add your photos. No paperwork mountains, no gatekeepers — your campaign can be live the same day it is approved.'
+                text: 'Tell your story, set your goal, add your photos. No paperwork mountains, no gatekeepers, your campaign can be live the same day it is approved.'
               },
               {
                 icon: SmartphoneIcon,
@@ -139,7 +139,7 @@ export function AboutPage() {
               <p>
                 For too long, raising money meant standing at a crossroads: knock on doors, post in
                 group chats, hope the right person sees it before the deadline passes. Generosity
-                was abundant — but scattered, slow, and hard to trust.
+                was abundant, but scattered, slow, and hard to trust.
               </p>
               <p>
                 We gathered all of it into one place. One page that carries your whole story. One
@@ -148,7 +148,7 @@ export function AboutPage() {
                 when, and how.
               </p>
               <p className="font-semibold text-surface-900">
-                Fundraising should feel like being carried by your community — not like carrying it
+                Fundraising should feel like being carried by your community, not like carrying it
                 alone.
               </p>
             </motion.div>
@@ -158,7 +158,7 @@ export function AboutPage() {
                 {
                   icon: UsersIcon,
                   title: 'For organizers',
-                  text: 'A dignified way to ask — with verification that earns trust and tools that respect your time.'
+                  text: 'A dignified way to ask, with verification that earns trust and tools that respect your time.'
                 },
                 {
                   icon: HeartHandshakeIcon,
@@ -199,7 +199,7 @@ export function AboutPage() {
             {[
               {
                 title: 'Transparency is kindness',
-                text: 'Clear fees, visible progress, honest accounting. Trust is not asked for — it is shown.'
+                text: 'Clear fees, visible progress, honest accounting. Trust is not asked for, it is shown.'
               },
               {
                 title: 'Dignity in asking',
