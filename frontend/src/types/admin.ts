@@ -22,6 +22,36 @@ export interface AdminExtensionRequestRow {
   createdAt: string;
 }
 
+export interface AdminContentRevisionRow {
+  id: string;
+  campaignId: string;
+  campaignSlug: string;
+  campaignStatus: string;
+  reason: string | null;
+  status: string;
+  requestedBy: { id: string; fullName: string; email: string };
+  createdAt: string;
+  current: {
+    title: string;
+    shortDescription: string;
+    fullDescription: string;
+    category: string;
+    goalAmount: number;
+    coverImage: string;
+    galleryImages: string[];
+    raisedAmount: number;
+  };
+  proposed: {
+    title: string;
+    shortDescription: string;
+    fullDescription: string;
+    category: string;
+    goalAmount: number;
+    coverImage: string;
+    galleryImages: string[];
+  };
+}
+
 export interface AdminCampaignCreator {
   id: string;
   fullName: string;
@@ -166,7 +196,7 @@ export interface AdminPaged<T> {
 }
 
 export interface AdminNotificationItem {
-  id: 'campaign_reviews' | 'extension_requests' | 'withdrawals' | 'bank_transfers';
+  id: 'campaign_reviews' | 'content_revisions' | 'extension_requests' | 'withdrawals' | 'bank_transfers';
   label: string;
   count: number;
   tab: AdminPanelKey;

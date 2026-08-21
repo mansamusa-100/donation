@@ -177,6 +177,7 @@ export function buildCampaignLifecycleMeta(
     lastDonationAt?: string | null;
     inactive60Days?: boolean;
     pendingExtension?: { id: string; requestedEndDate: string; status: string } | null;
+    pendingContentRevision?: { id: string; status: string; createdAt: string } | null;
   }
 ) {
   const fundraisingPeriodEnded = isFundraisingPeriodEnded(campaign.endsAt);
@@ -198,6 +199,7 @@ export function buildCampaignLifecycleMeta(
     canConfirmEnd: canOwnerConfirmEnd(campaign),
     lastDonationAt: extras?.lastDonationAt ?? null,
     inactive60Days: extras?.inactive60Days ?? false,
-    pendingExtension: extras?.pendingExtension ?? null
+    pendingExtension: extras?.pendingExtension ?? null,
+    pendingContentRevision: extras?.pendingContentRevision ?? null
   };
 }

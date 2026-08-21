@@ -36,6 +36,13 @@ enum CampaignExtensionStatus {
   Rejected
 }
 
+/// Same lifecycle as period extensions — used for post-publish content edits.
+enum CampaignContentRevisionStatus {
+  Pending
+  Approved
+  Rejected
+}
+
 enum UserRole {
   ADMIN
   USER
@@ -104,6 +111,8 @@ model User {
   campaigns       Campaign[]
   extensionRequestsSubmitted CampaignExtensionRequest[] @relation("ExtensionRequestsByUser")
   extensionRequestsReviewed  CampaignExtensionRequest[] @relation("ExtensionReviewsByAdmin")
+  contentRevisionsSubmitted  CampaignContentRevision[] @relation("ContentRevisionsByUser")
+  contentRevisionsReviewed   CampaignContentRevision[] @relation("ContentReviewsByAdmin")
   donations       Donation[]
   withdrawalRequests WithdrawalRequest[]
   payoutMethods      UserPayoutMethod[]
@@ -154,6 +163,7 @@ model Campaign {
   donations        Donation[]
   withdrawalRequests WithdrawalRequest[]
   extensionRequests CampaignExtensionRequest[]
+  contentRevisions  CampaignContentRevision[]
   wavePaymentIntents WavePaymentIntent[]
   easypayPaymentIntents EasypayPaymentIntent[]
   bankTransferIntents BankTransferIntent[]
@@ -312,6 +322,33 @@ model CampaignExtensionRequest {
   campaign         Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   requestedBy      User                    @relation("ExtensionRequestsByUser", fields: [requestedById], references: [id], onDelete: Cascade)
   reviewedBy       User?                   @relation("ExtensionReviewsByAdmin", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([campaignId, status])
+  @@index([status, createdAt])
+}
+
+/// Organizer-proposed content changes for a live (Active) campaign. Applied only after admin approval.
+model CampaignContentRevision {
+  id               String                        @id @default(cuid())
+  campaignId       String
+  requestedById    String
+  title            String
+  shortDescription String
+  fullDescription  String
+  category         Category
+  goalAmount       Int
+  coverImage       String
+  galleryImages    String[]                      @default([])
+  reason           String?
+  status           CampaignContentRevisionStatus @default(Pending)
+  reviewedById     String?
+  reviewedAt       DateTime?
+  adminNote        String?
+  createdAt        DateTime                      @default(now())
+  updatedAt        DateTime                      @updatedAt
+  campaign         Campaign                      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  requestedBy      User                          @relation("ContentRevisionsByUser", fields: [requestedById], references: [id], onDelete: Cascade)
+  reviewedBy       User?                         @relation("ContentReviewsByAdmin", fields: [reviewedById], references: [id], onDelete: SetNull)
 
   @@index([campaignId, status])
   @@index([status, createdAt])

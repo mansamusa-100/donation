@@ -31,6 +31,7 @@ import {
   type AdminCampaign,
   type AdminCampaignStatus,
   type AdminExtensionRequestRow,
+  type AdminContentRevisionRow,
   type AdminDashboardStats,
   type AdminNotificationSummary,
   type AdminPanelKey,
@@ -281,6 +282,9 @@ export function AdminPage() {
   const [extensionRequests, setExtensionRequests] = useState<AdminExtensionRequestRow[]>([]);
   const [extensionTotal, setExtensionTotal] = useState(0);
   const [busyExtensionId, setBusyExtensionId] = useState<string | null>(null);
+  const [contentRevisions, setContentRevisions] = useState<AdminContentRevisionRow[]>([]);
+  const [contentRevisionTotal, setContentRevisionTotal] = useState(0);
+  const [busyContentRevisionId, setBusyContentRevisionId] = useState<string | null>(null);
   const [allCampaigns, setAllCampaigns] = useState<AdminCampaign[]>([]);
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [loadError, setLoadError] = useState('');
@@ -394,14 +398,17 @@ export function AdminPage() {
       if (can('queue')) {
         fetches.push(
           (async () => {
-            const [pendingRes, extRes] = await Promise.all([
+            const [pendingRes, extRes, contentRes] = await Promise.all([
               api.getAdminPendingCampaigns({ page: queuePage, pageSize: ADMIN_TABLE_PAGE_SIZE }),
-              api.getAdminPendingExtensionRequests({ page: 1, pageSize: 20 })
+              api.getAdminPendingExtensionRequests({ page: 1, pageSize: 20 }),
+              api.getAdminPendingContentRevisions({ page: 1, pageSize: 20 })
             ]);
             setPending(pendingRes.items);
             setQueueTotal(pendingRes.total);
             setExtensionRequests(extRes.items);
             setExtensionTotal(extRes.total);
+            setContentRevisions(contentRes.items);
+            setContentRevisionTotal(contentRes.total);
           })()
         );
       } else {
@@ -409,6 +416,8 @@ export function AdminPage() {
         setQueueTotal(0);
         setExtensionRequests([]);
         setExtensionTotal(0);
+        setContentRevisions([]);
+        setContentRevisionTotal(0);
       }
       if (can('campaigns')) {
         fetches.push(
@@ -697,6 +706,28 @@ export function AdminPage() {
       setActionError(err instanceof Error ? err.message : 'Extension review failed');
     } finally {
       setBusyExtensionId(null);
+    }
+  };
+
+  const handleContentRevisionReview = async (
+    requestId: string,
+    status: 'Approved' | 'Rejected'
+  ) => {
+    if (
+      status === 'Rejected' &&
+      !window.confirm('Reject these content edits? The public campaign will stay as it is.')
+    ) {
+      return;
+    }
+    setActionError('');
+    setBusyContentRevisionId(requestId);
+    try {
+      await api.reviewAdminContentRevision(requestId, { status });
+      await loadData();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Content edit review failed');
+    } finally {
+      setBusyContentRevisionId(null);
     }
   };
 
@@ -1319,6 +1350,85 @@ export function AdminPage() {
 
           {tab === 'queue' && (
             <div className="space-y-8">
+              {contentRevisionTotal > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-lg font-display font-bold text-slate-900">
+                    Content edit requests ({contentRevisionTotal})
+                  </h2>
+                  <div className="space-y-4">
+                    {contentRevisions.map((r) => (
+                      <article
+                        key={r.id}
+                        className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4">
+                        <div>
+                          <h3 className="font-bold text-slate-900">{r.current.title}</h3>
+                          <p className="text-sm text-slate-600 mt-1">
+                            {r.requestedBy.fullName} ({r.requestedBy.email}) · submitted{' '}
+                            {formatDate(r.createdAt)}
+                          </p>
+                          {r.reason && (
+                            <p className="text-sm text-slate-500 mt-2 italic">&ldquo;{r.reason}&rdquo;</p>
+                          )}
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-4 text-sm">
+                          <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1">
+                            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                              Current (live)
+                            </p>
+                            <p className="font-semibold text-slate-900">{r.current.title}</p>
+                            <p className="text-slate-600 line-clamp-3">{r.current.shortDescription}</p>
+                            <p className="text-xs text-slate-500">
+                              {r.current.category} · Goal {formatGmd(r.current.goalAmount)} · Raised{' '}
+                              {formatGmd(r.current.raisedAmount)}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border border-brand-100 bg-brand-50/40 p-3 space-y-1">
+                            <p className="text-xs font-bold uppercase tracking-wide text-brand-700">
+                              Proposed
+                            </p>
+                            <p className="font-semibold text-slate-900">{r.proposed.title}</p>
+                            <p className="text-slate-600 line-clamp-3">{r.proposed.shortDescription}</p>
+                            <p className="text-xs text-slate-500">
+                              {r.proposed.category} · Goal {formatGmd(r.proposed.goalAmount)}
+                            </p>
+                            {r.proposed.coverImage !== r.current.coverImage && (
+                              <p className="text-xs text-brand-800 font-medium">Cover image changed</p>
+                            )}
+                          </div>
+                        </div>
+                        <details className="text-sm text-slate-600">
+                          <summary className="cursor-pointer font-semibold text-slate-800">
+                            Full proposed story
+                          </summary>
+                          <p className="mt-2 whitespace-pre-wrap">{r.proposed.fullDescription}</p>
+                        </details>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={busyContentRevisionId === r.id}
+                            onClick={() => void handleContentRevisionReview(r.id, 'Approved')}
+                            className="px-4 py-2 rounded-lg bg-brand-600 text-white font-bold text-sm disabled:opacity-50">
+                            Approve edits
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyContentRevisionId === r.id}
+                            onClick={() => void handleContentRevisionReview(r.id, 'Rejected')}
+                            className="px-4 py-2 rounded-lg border-2 border-red-200 text-red-700 font-bold text-sm disabled:opacity-50">
+                            Reject
+                          </button>
+                          <Link
+                            to={`/campaign/${r.campaignSlug}`}
+                            className="px-4 py-2 rounded-lg border border-slate-200 text-slate-700 font-bold text-sm hover:bg-slate-50">
+                            View live page
+                          </Link>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {extensionTotal > 0 && (
                 <div className="space-y-3">
                   <h2 className="text-lg font-display font-bold text-slate-900">

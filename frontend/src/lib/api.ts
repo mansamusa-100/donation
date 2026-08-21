@@ -15,6 +15,7 @@ import type {
   AdminCampaign,
   AdminDashboardStats,
   AdminExtensionRequestRow,
+  AdminContentRevisionRow,
   AdminNotificationSummary,
   AdminPaged,
   AdminUserRow,
@@ -354,6 +355,30 @@ export const api = {
     });
   },
 
+  updateCampaignContent(
+    slug: string,
+    payload: {
+      title: string;
+      shortDescription: string;
+      fullDescription: string;
+      category: Category;
+      goalAmount: number;
+      coverImage: string;
+      galleryImages?: string[];
+      reason?: string;
+    }
+  ) {
+    return request<{
+      kind: 'revision' | 'applied';
+      message: string;
+      revision?: { id: string; status: string; createdAt: string };
+      campaign: Campaign;
+    }>(`/api/campaigns/${encodeURIComponent(slug)}/content`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    });
+  },
+
   uploadCampaignCoverImage(file: File) {
     const formData = new FormData();
     formData.append('file', file);
@@ -678,6 +703,26 @@ export const api = {
     const q = adminListQuery(params?.page, params?.pageSize);
     return request<AdminPaged<AdminExtensionRequestRow>>(
       `/api/admin/campaigns/extension-requests/pending${q}`
+    );
+  },
+
+  getAdminPendingContentRevisions(params?: { page?: number; pageSize?: number }) {
+    const q = adminListQuery(params?.page, params?.pageSize);
+    return request<AdminPaged<AdminContentRevisionRow>>(
+      `/api/admin/campaigns/content-revisions/pending${q}`
+    );
+  },
+
+  reviewAdminContentRevision(
+    requestId: string,
+    payload: { status: 'Approved' | 'Rejected'; adminNote?: string }
+  ) {
+    return request<{ message: string }>(
+      `/api/admin/campaigns/content-revisions/${encodeURIComponent(requestId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      }
     );
   },
 

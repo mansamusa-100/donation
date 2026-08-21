@@ -180,7 +180,41 @@ const createDonationSchema = z.object({
   message: z.string().max(280).optional(),
   isAnonymous: z.boolean().default(false),
   avatarUrl: z.string().url().optional()
-});
+  });
+
+const campaignContentEditSchema = z
+  .object({
+    title: z.string().min(5).max(120),
+    shortDescription: z.string().min(20).max(240),
+    fullDescription: z.string().min(40),
+    category: z.nativeEnum(Category),
+    goalAmount: z.number().int().positive(),
+    coverImage: coverImageSchema,
+    galleryImages: z.array(coverImageSchema).max(4).optional().default([]),
+    reason: z.string().trim().max(500).optional()
+  })
+  .superRefine((data, ctx) => {
+    const extras = data.galleryImages ?? [];
+    if (extras.includes(data.coverImage)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Gallery images must not duplicate the cover image',
+        path: ['galleryImages']
+      });
+    }
+    const seen = new Set<string>();
+    for (const url of extras) {
+      if (seen.has(url)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Duplicate gallery image URL',
+          path: ['galleryImages']
+        });
+        return;
+      }
+      seen.add(url);
+    }
+  });
 
 const createWithdrawalRequestSchema = z.object({
   campaignSlug: z.string().min(1),
@@ -372,10 +406,25 @@ campaignsRouter.get(
       ])
     );
 
+    const pendingContentRevisions = await prisma.campaignContentRevision.findMany({
+      where: {
+        campaignId: { in: campaigns.map((c) => c.id) },
+        status: 'Pending'
+      },
+      select: { id: true, campaignId: true, status: true, createdAt: true }
+    });
+    const contentRevByCampaign = new Map(
+      pendingContentRevisions.map((r) => [
+        r.campaignId,
+        { id: r.id, status: r.status, createdAt: r.createdAt.toISOString() }
+      ])
+    );
+
     const serializedCampaigns = await Promise.all(
       campaigns.map((c) =>
         serializeCampaignWithLifecycle(c, {
           pendingExtension: extByCampaign.get(c.id) ?? null,
+          pendingContentRevision: contentRevByCampaign.get(c.id) ?? null,
           includePrivateContact: true
         })
       )
@@ -769,6 +818,171 @@ campaignsRouter.post(
     });
 
     res.json(await serializeCampaignWithLifecycle(updated));
+  })
+);
+
+/**
+ * Organizer content edit:
+ * - PendingReview / Rejected: apply immediately (still not public until Active); Rejected → PendingReview.
+ * - Active: create a content revision that admins must approve before the public page updates.
+ */
+campaignsRouter.patch(
+  '/:slug/content',
+  authenticate,
+  requireEmailVerified,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ message: 'Authentication required' });
+      return;
+    }
+
+    const body = campaignContentEditSchema.parse(req.body);
+    const campaign = await prisma.campaign.findUnique({
+      where: { slug: String(req.params.slug) },
+      include: { donations: true }
+    });
+
+    if (!campaign) {
+      res.status(404).json({ message: 'Campaign not found' });
+      return;
+    }
+
+    if (campaign.creatorId !== userId) {
+      res.status(403).json({ message: 'Only the campaign organizer can edit this campaign' });
+      return;
+    }
+
+    if (campaign.status === 'Closed' || campaign.status === 'Ended') {
+      res.status(400).json({ message: 'Ended or closed campaigns cannot be edited.' });
+      return;
+    }
+
+    const galleryImages = (body.galleryImages ?? []).filter((u) => u !== body.coverImage).slice(0, 4);
+
+    // Live campaigns: queue for admin approval (public page stays unchanged until approved).
+    if (campaign.status === 'Active') {
+      const existingPending = await prisma.campaignContentRevision.findFirst({
+        where: { campaignId: campaign.id, status: 'Pending' }
+      });
+      if (existingPending) {
+        res.status(400).json({
+          message:
+            'You already have content changes waiting for admin review. Wait for a decision, or ask an admin to reject them so you can submit again.'
+        });
+        return;
+      }
+
+      if (body.goalAmount < Math.ceil(campaign.raisedAmount)) {
+        res.status(400).json({
+          message: `Goal cannot be below the amount already raised (D${Math.ceil(campaign.raisedAmount).toLocaleString()}).`
+        });
+        return;
+      }
+
+      const revision = await prisma.campaignContentRevision.create({
+        data: {
+          campaignId: campaign.id,
+          requestedById: userId,
+          title: body.title.trim(),
+          shortDescription: body.shortDescription.trim(),
+          fullDescription: body.fullDescription.trim(),
+          category: body.category,
+          goalAmount: body.goalAmount,
+          coverImage: body.coverImage,
+          galleryImages,
+          reason: body.reason?.trim() || null
+        }
+      });
+
+      await recordActivity({
+        type: 'CAMPAIGN_CONTENT_REVISION_SUBMITTED',
+        title: `Content edit submitted: ${campaign.title}`,
+        detail: body.reason?.trim() || 'Organizer proposed campaign content changes',
+        campaignId: campaign.id,
+        userId: campaign.creatorId,
+        actorId: userId
+      });
+
+      void notifyAdminsCampaignSubmitted({
+        title: `${campaign.title} (content edit)`,
+        slug: campaign.slug,
+        creatorLabel: campaign.creatorName
+      });
+
+      res.status(201).json({
+        kind: 'revision' as const,
+        message: 'Your changes were submitted for admin review. The public campaign stays unchanged until approved.',
+        revision: {
+          id: revision.id,
+          status: revision.status,
+          createdAt: revision.createdAt.toISOString()
+        },
+        campaign: await serializeCampaignWithLifecycle(campaign, {
+          pendingContentRevision: {
+            id: revision.id,
+            status: revision.status,
+            createdAt: revision.createdAt.toISOString()
+          },
+          includePrivateContact: true
+        })
+      });
+      return;
+    }
+
+    // Not yet public (PendingReview / Rejected / Draft): update in place; Rejected returns to queue.
+    if (
+      campaign.status !== 'PendingReview' &&
+      campaign.status !== 'Rejected' &&
+      campaign.status !== 'Draft'
+    ) {
+      res.status(400).json({ message: 'This campaign cannot be edited in its current status.' });
+      return;
+    }
+
+    const updated = await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        title: body.title.trim(),
+        shortDescription: body.shortDescription.trim(),
+        fullDescription: body.fullDescription.trim(),
+        category: body.category,
+        goalAmount: body.goalAmount,
+        coverImage: body.coverImage,
+        galleryImages,
+        ...(campaign.status === 'Rejected' ? { status: 'PendingReview' as const } : {})
+      },
+      include: { donations: true }
+    });
+
+    await recordActivity({
+      type: 'CAMPAIGN_CONTENT_UPDATED',
+      title: `Campaign content updated: ${updated.title}`,
+      detail:
+        campaign.status === 'Rejected'
+          ? 'Resubmitted after rejection — back in review queue'
+          : 'Updated while awaiting first approval',
+      campaignId: updated.id,
+      userId: updated.creatorId,
+      actorId: userId
+    });
+
+    if (campaign.status === 'Rejected') {
+      void notifyAdminsCampaignSubmitted({
+        title: updated.title,
+        slug: updated.slug,
+        creatorLabel: updated.creatorName
+      });
+    }
+
+    res.json({
+      kind: 'applied' as const,
+      message:
+        campaign.status === 'Rejected'
+          ? 'Campaign updated and resubmitted for admin review.'
+          : 'Campaign updated. It remains in the admin review queue.',
+      campaign: await serializeCampaignWithLifecycle(updated, { includePrivateContact: true })
+    });
   })
 );
 

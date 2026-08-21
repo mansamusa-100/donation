@@ -18,6 +18,10 @@ const CreateCampaignPage = lazy(async () => ({
   default: (await import('./pages/CreateCampaignPage')).CreateCampaignPage
 }));
 
+const EditCampaignPage = lazy(async () => ({
+  default: (await import('./pages/EditCampaignPage')).EditCampaignPage
+}));
+
 const LoginPage = lazy(async () => ({
   default: (await import('./pages/LoginPage')).LoginPage
 }));
@@ -133,6 +137,7 @@ function AppChrome() {
             <Route path="/explore" element={<ExplorePage />} />
             <Route path="/campaign/:slug" element={<CampaignDetailPage />} />
             <Route path="/create" element={<CreateCampaignPage />} />
+            <Route path="/campaign/:slug/edit" element={<EditCampaignPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />

@@ -45,6 +45,11 @@ export interface CampaignLifecycleMeta {
     requestedEndDate: string;
     status: string;
   } | null;
+  pendingContentRevision?: {
+    id: string;
+    status: string;
+    createdAt: string;
+  } | null;
 }
 
 export interface CampaignExtensionRequestSummary {
@@ -119,6 +124,7 @@ export interface Campaign {
   allFundsPaidOut?: boolean;
   canConfirmEnd?: boolean;
   pendingExtension?: CampaignLifecycleMeta['pendingExtension'];
+  pendingContentRevision?: CampaignLifecycleMeta['pendingContentRevision'];
 }
 
 export type WithdrawalRequestStatus =

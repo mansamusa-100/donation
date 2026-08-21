@@ -18,6 +18,7 @@ export async function serializeCampaignWithLifecycle(
     includeAdminInactive?: boolean;
     includePrivateContact?: boolean;
     pendingExtension?: { id: string; requestedEndDate: string; status: string } | null;
+    pendingContentRevision?: { id: string; status: string; createdAt: string } | null;
   }
 ) {
   const balances = await getCampaignWithdrawalBalances(
@@ -41,7 +42,8 @@ export async function serializeCampaignWithLifecycle(
     ...buildCampaignLifecycleMeta(campaign, balances, {
       lastDonationAt,
       inactive60Days,
-      pendingExtension: options?.pendingExtension ?? null
+      pendingExtension: options?.pendingExtension ?? null,
+      pendingContentRevision: options?.pendingContentRevision ?? null
     }),
     availableForWithdrawal: balances.availableForWithdrawal
   };

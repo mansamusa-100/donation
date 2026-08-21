@@ -189,6 +189,18 @@ adminRouter.get(
             });
           })
       );
+      fetches.push(
+        prisma.campaignContentRevision
+          .count({ where: { status: 'Pending' } })
+          .then((count) => {
+            items.push({
+              id: 'content_revisions',
+              label: 'Content edit requests',
+              count,
+              tab: canAccess('queue') ? 'queue' : 'campaigns'
+            });
+          })
+      );
     }
 
     if (canAccess('withdrawals')) {
@@ -223,7 +235,13 @@ adminRouter.get(
 
     await Promise.all(fetches);
 
-    const order = ['campaign_reviews', 'extension_requests', 'withdrawals', 'bank_transfers'];
+    const order = [
+      'campaign_reviews',
+      'content_revisions',
+      'extension_requests',
+      'withdrawals',
+      'bank_transfers'
+    ];
     items.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 
     res.json({
@@ -930,6 +948,176 @@ adminRouter.patch(
         status: updated.status,
         adminNote: updated.adminNote,
         reviewedAt: updated.reviewedAt?.toISOString() ?? null
+      }
+    });
+  })
+);
+
+const reviewContentRevisionSchema = z.object({
+  status: z.enum(['Approved', 'Rejected']),
+  adminNote: z.string().max(500).optional()
+});
+
+adminRouter.get(
+  '/campaigns/content-revisions/pending',
+  requireAnyAdminPanel(['queue', 'campaigns']),
+  asyncHandler(async (req: Request, res) => {
+    const { page, pageSize, skip } = parsePagination(req.query, 20);
+    const where = { status: 'Pending' as const };
+    const [total, items] = await Promise.all([
+      prisma.campaignContentRevision.count({ where }),
+      prisma.campaignContentRevision.findMany({
+        where,
+        orderBy: { createdAt: 'asc' },
+        skip,
+        take: pageSize,
+        include: {
+          campaign: {
+            select: {
+              id: true,
+              title: true,
+              slug: true,
+              status: true,
+              shortDescription: true,
+              fullDescription: true,
+              category: true,
+              goalAmount: true,
+              coverImage: true,
+              galleryImages: true,
+              raisedAmount: true
+            }
+          },
+          requestedBy: {
+            select: { id: true, fullName: true, email: true }
+          }
+        }
+      })
+    ]);
+
+    res.json({
+      items: items.map((r) => ({
+        id: r.id,
+        campaignId: r.campaignId,
+        campaignSlug: r.campaign.slug,
+        campaignStatus: r.campaign.status,
+        reason: r.reason,
+        status: r.status,
+        requestedBy: r.requestedBy,
+        createdAt: r.createdAt.toISOString(),
+        current: {
+          title: r.campaign.title,
+          shortDescription: r.campaign.shortDescription,
+          fullDescription: r.campaign.fullDescription,
+          category: r.campaign.category,
+          goalAmount: r.campaign.goalAmount,
+          coverImage: r.campaign.coverImage,
+          galleryImages: r.campaign.galleryImages,
+          raisedAmount: r.campaign.raisedAmount
+        },
+        proposed: {
+          title: r.title,
+          shortDescription: r.shortDescription,
+          fullDescription: r.fullDescription,
+          category: r.category,
+          goalAmount: r.goalAmount,
+          coverImage: r.coverImage,
+          galleryImages: r.galleryImages
+        }
+      })),
+      total,
+      page,
+      pageSize
+    });
+  })
+);
+
+adminRouter.patch(
+  '/campaigns/content-revisions/:requestId',
+  requireAnyAdminPanel(['queue', 'campaigns']),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const requestId = String(req.params.requestId);
+    const body = reviewContentRevisionSchema.parse(req.body);
+
+    const existing = await prisma.campaignContentRevision.findUnique({
+      where: { id: requestId },
+      include: {
+        campaign: true,
+        requestedBy: { select: { email: true, fullName: true } }
+      }
+    });
+
+    if (!existing) {
+      res.status(404).json({ message: 'Content revision not found' });
+      return;
+    }
+
+    if (existing.status !== 'Pending') {
+      res.status(400).json({ message: 'This content revision has already been reviewed' });
+      return;
+    }
+
+    if (body.status === 'Approved') {
+      if (existing.campaign.status !== 'Active') {
+        res.status(400).json({
+          message: 'Only active campaigns can receive approved content edits.'
+        });
+        return;
+      }
+      if (existing.goalAmount < Math.ceil(existing.campaign.raisedAmount)) {
+        res.status(400).json({
+          message: `Proposed goal is below amount already raised (D${Math.ceil(existing.campaign.raisedAmount).toLocaleString()}).`
+        });
+        return;
+      }
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.campaignContentRevision.update({
+        where: { id: requestId },
+        data: {
+          status: body.status,
+          reviewedById: req.userId ?? null,
+          reviewedAt: new Date(),
+          adminNote: body.adminNote?.trim() || null
+        },
+        include: {
+          campaign: true,
+          requestedBy: { select: { email: true, fullName: true } }
+        }
+      });
+
+      if (body.status === 'Approved') {
+        await tx.campaign.update({
+          where: { id: existing.campaignId },
+          data: {
+            title: existing.title,
+            shortDescription: existing.shortDescription,
+            fullDescription: existing.fullDescription,
+            category: existing.category,
+            goalAmount: existing.goalAmount,
+            coverImage: existing.coverImage,
+            galleryImages: existing.galleryImages
+          }
+        });
+      }
+
+      return row;
+    });
+
+    await recordActivity({
+      type: 'CAMPAIGN_CONTENT_REVISION_REVIEWED',
+      title: `Content edit ${body.status.toLowerCase()}: ${updated.campaign.title}`,
+      detail: body.adminNote?.trim() || existing.reason || null,
+      campaignId: updated.campaignId,
+      userId: updated.campaign.creatorId,
+      actorId: req.userId ?? null
+    });
+
+    res.json({
+      message: `Content revision ${body.status.toLowerCase()}`,
+      request: {
+        id: updated.id,
+        status: updated.status
       }
     });
   })
