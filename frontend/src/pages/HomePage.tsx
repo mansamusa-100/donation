@@ -274,7 +274,7 @@ export function HomePage() {
               },
               {
                 title: 'Receive Funds',
-                desc: 'Withdraw directly to your Afrimoney, Wave, or QMoney wallet.',
+                desc: 'Withdraw directly to your APS Wallet, Wave, or Yonna wallet and Bank.',
                 icon: WalletIcon
               }
             ].map((step, i) => (
@@ -317,7 +317,7 @@ export function HomePage() {
                   <div>
                     <h4 className="font-bold text-surface-900 text-lg">Secure Local & Global Payments</h4>
                     <p className="text-surface-600">
-                      Donate safely using local mobile money or international cards via Stripe.
+                      Donate safely using local mobile money or Bank.
                     </p>
                   </div>
                 </li>
