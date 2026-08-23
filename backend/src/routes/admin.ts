@@ -36,6 +36,11 @@ import {
   sendBankTransferConfirmedEmails
 } from '../lib/finalizeBankTransfer.js';
 import { sendBankTransferRejectedEmail } from '../lib/mail.js';
+import {
+  donationCheckoutInclude,
+  serializeAdminDonationTransaction,
+  type DonationWithCheckout
+} from '../lib/adminDonationSerialize.js';
 import { HttpError } from '../lib/HttpError.js';
 import { boundedMoneySchema } from '../lib/money.js';
 import { markOrganizerKycVerifiedOnCampaignApprove } from '../lib/userKyc.js';
@@ -72,6 +77,73 @@ function canManageAdminsList(perms: string[]): boolean {
 
 const MAX_ADMIN_PAGE_SIZE = 50;
 const AUDIT_EXPORT_MAX_ROWS = 2000;
+const DONATION_EXPORT_MAX_ROWS = 5000;
+
+function parseDonationFilters(query: Request['query']): {
+  where: Prisma.DonationWhereInput;
+} {
+  const conditions: Prisma.DonationWhereInput[] = [];
+
+  const fromRaw = typeof query.from === 'string' ? query.from.trim() : '';
+  if (fromRaw) {
+    const from = new Date(fromRaw);
+    if (!Number.isNaN(from.getTime())) {
+      conditions.push({ createdAt: { gte: from } });
+    }
+  }
+
+  const toRaw = typeof query.to === 'string' ? query.to.trim() : '';
+  if (toRaw) {
+    const to = new Date(toRaw);
+    if (!Number.isNaN(to.getTime())) {
+      const end = new Date(to);
+      end.setUTCHours(23, 59, 59, 999);
+      conditions.push({ createdAt: { lte: end } });
+    }
+  }
+
+  const methodRaw = typeof query.method === 'string' ? query.method.trim().toLowerCase() : '';
+  if (methodRaw === 'wave') {
+    conditions.push({ wavePaymentIntent: { isNot: null } });
+  } else if (methodRaw === 'easypay') {
+    conditions.push({ easypayPaymentIntent: { isNot: null } });
+  } else if (methodRaw === 'bank') {
+    conditions.push({ bankTransferIntent: { isNot: null } });
+  } else if (methodRaw === 'direct') {
+    conditions.push({
+      wavePaymentIntent: null,
+      easypayPaymentIntent: null,
+      bankTransferIntent: null
+    });
+  }
+
+  const qRaw = typeof query.q === 'string' ? query.q.trim() : '';
+  if (qRaw) {
+    conditions.push({
+      OR: [
+        { donorName: { contains: qRaw, mode: 'insensitive' } },
+        { message: { contains: qRaw, mode: 'insensitive' } },
+        { campaign: { title: { contains: qRaw, mode: 'insensitive' } } },
+        { campaign: { slug: { contains: qRaw, mode: 'insensitive' } } },
+        { wavePaymentIntent: { clientReference: { contains: qRaw, mode: 'insensitive' } } },
+        {
+          easypayPaymentIntent: {
+            OR: [
+              { partnerExternalBookingId: { contains: qRaw, mode: 'insensitive' } },
+              { orderPublicCode: { contains: qRaw, mode: 'insensitive' } },
+              { easypayOrderId: { contains: qRaw, mode: 'insensitive' } }
+            ]
+          }
+        },
+        { bankTransferIntent: { clientReference: { contains: qRaw, mode: 'insensitive' } } }
+      ]
+    });
+  }
+
+  return {
+    where: conditions.length ? { AND: conditions } : {}
+  };
+}
 
 function parseAuditFilters(query: Request['query']): {
   where: Prisma.ActivityLogWhereInput;
@@ -2146,6 +2218,91 @@ adminRouter.post(
     }
 
     res.json(serializeBankTransferIntent(updated));
+  })
+);
+
+adminRouter.get(
+  '/donations/export.csv',
+  requireAdminPanel('donations'),
+  asyncHandler(async (req: Request, res) => {
+    const { where } = parseDonationFilters(req.query);
+    const rows = await prisma.donation.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: DONATION_EXPORT_MAX_ROWS,
+      include: donationCheckoutInclude
+    });
+
+    const header = [
+      'createdAt',
+      'campaignTitle',
+      'campaignSlug',
+      'donor',
+      'isAnonymous',
+      'amount',
+      'platformFee',
+      'platformTip',
+      'currency',
+      'checkout',
+      'paymentReference',
+      'easypayGateway',
+      'message',
+      'userEmail',
+      'donationId'
+    ];
+    const lines = [
+      header.join(','),
+      ...rows.map((row) => {
+        const item = serializeAdminDonationTransaction(row as DonationWithCheckout);
+        return [
+          csvEscape(item.createdAt),
+          csvEscape(item.campaign.title),
+          csvEscape(item.campaign.slug),
+          csvEscape(item.donorDisplayName),
+          csvEscape(item.isAnonymous ? 'yes' : 'no'),
+          csvEscape(String(item.amount)),
+          csvEscape(String(item.platformFeeAmount)),
+          csvEscape(String(item.platformTipAmount)),
+          csvEscape(item.currency),
+          csvEscape(item.checkoutLabel),
+          csvEscape(item.paymentReference ?? ''),
+          csvEscape(item.easypayGatewayCode ?? ''),
+          csvEscape(item.message ?? ''),
+          csvEscape(item.user?.email ?? ''),
+          csvEscape(item.id)
+        ].join(',');
+      })
+    ];
+    const body = '\uFEFF' + lines.join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="admin-donation-transactions.csv"');
+    res.send(body);
+  })
+);
+
+adminRouter.get(
+  '/donations',
+  requireAdminPanel('donations'),
+  asyncHandler(async (req: Request, res) => {
+    const { page, pageSize, skip } = parsePagination(req.query, 25);
+    const { where } = parseDonationFilters(req.query);
+    const [total, items] = await Promise.all([
+      prisma.donation.count({ where }),
+      prisma.donation.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: pageSize,
+        include: donationCheckoutInclude
+      })
+    ]);
+
+    res.json({
+      items: items.map((row) => serializeAdminDonationTransaction(row as DonationWithCheckout)),
+      total,
+      page,
+      pageSize
+    });
   })
 );
 

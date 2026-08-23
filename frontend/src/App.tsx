@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { Footer } from './components/Footer';
 import { Navbar } from './components/Navbar';
 import { EmailVerificationBanner } from './components/EmailVerificationBanner';
+import { InstallAppBanner } from './components/InstallAppBanner';
 import { RouteLoader } from './components/RouteLoader';
 import { HomePage } from './pages/HomePage';
 
@@ -161,6 +162,7 @@ function AppChrome() {
         </Suspense>
       </main>
       {!isAdminShell && <Footer />}
+      {!isAdminShell && <InstallAppBanner />}
     </div>
   );
 }

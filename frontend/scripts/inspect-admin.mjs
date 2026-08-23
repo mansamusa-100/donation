@@ -1,0 +1,15 @@
+const fs = require('fs');
+const path = require('path');
+const p = path.join(__dirname, '../src/pages/AdminPage.tsx');
+const s = fs.readFileSync(p, 'utf8');
+const i = s.indexOf('View ID document');
+console.log('context around View ID:');
+console.log(s.slice(i - 400, i + 100));
+console.log('\n--- Active View link ---');
+const j = s.indexOf("status === 'Active'");
+console.log(s.slice(j - 40, j + 350));
+console.log('\n--- busy ---');
+console.log(s.match(/const \[busyCampaignId[\s\S]*?null\);/)?.[0]);
+console.log('\n--- markPaid ---');
+console.log(s.includes('markPaidWithdrawal'));
+console.log(s.indexOf('{markPaidWithdrawal'));

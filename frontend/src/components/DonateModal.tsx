@@ -769,7 +769,7 @@ export function DonateModal({
                       </ul>
                       <p className="text-xs text-surface-600">
                         {easypayCheckout
-                          ? 'After paying, you can open your campaign page to see the donation once DPay confirms (or use the return URL your team configured on DPay).'
+                          ? ' '
                           : (
                             <>
                               When payment succeeds, you&apos;ll return here to confirm. Match{' '}

@@ -14,9 +14,12 @@ import {
   UsersIcon,
   Wallet,
   Building2,
+  Receipt,
   X
 } from 'lucide-react';
 import { BankAdminPanel } from '../components/admin/BankAdminPanel';
+import { DonationsAdminPanel } from '../components/admin/DonationsAdminPanel';
+import { AdminCampaignReviewModal } from '../components/admin/AdminCampaignReviewModal';
 import { PasswordInput } from '../components/PasswordInput';
 import { useAuth } from '../context/AuthContext';
 import { BRAND_LOGO_SRC, BRAND_NAME } from '../lib/brand';
@@ -149,6 +152,7 @@ const PANEL_KEY_LABEL: Record<AdminPanelKey, string> = {
   admins: 'Admins (create + permissions)',
   easypay: 'DPay (provision tenant)',
   bank: 'Bank transfers (donations + accounts)',
+  donations: 'Donation transactions (searchable report)',
   audit: 'Audit log (reporting)'
 };
 
@@ -177,6 +181,7 @@ const NAV_DEF: { id: AdminTab; label: string; icon: typeof LayoutDashboardIcon }
   { id: 'admins', label: 'Admins', icon: UserCog },
   { id: 'easypay', label: 'DPay', icon: Wallet },
   { id: 'bank', label: 'Bank transfers', icon: Building2 },
+  { id: 'donations', label: 'Transactions', icon: Receipt },
   { id: 'audit', label: 'Audit log', icon: ScrollTextIcon }
 ];
 
@@ -289,6 +294,7 @@ export function AdminPage() {
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [loadError, setLoadError] = useState('');
   const [busyCampaignId, setBusyCampaignId] = useState<string | null>(null);
+  const [reviewCampaign, setReviewCampaign] = useState<AdminCampaign | null>(null);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [busyWithdrawalId, setBusyWithdrawalId] = useState<string | null>(null);
   const [markPaidWithdrawal, setMarkPaidWithdrawal] = useState<AdminWithdrawalRequestRow | null>(null);
@@ -754,20 +760,22 @@ export function AdminPage() {
   const handleCampaignStatus = async (
     campaignId: string,
     status: 'Active' | 'Rejected' | 'Closed' | 'Ended'
-  ) => {
+  ): Promise<boolean> => {
     if (status === 'Rejected' && !window.confirm('Reject this campaign? It will be hidden from the public site.')) {
-      return;
+      return false;
     }
     if (status === 'Closed' && !window.confirm('Close this campaign?')) {
-      return;
+      return false;
     }
     setActionError('');
     setBusyCampaignId(campaignId);
     try {
       await api.updateAdminCampaignStatus(campaignId, status);
       await loadData();
+      return true;
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Update failed');
+      return false;
     } finally {
       setBusyCampaignId(null);
     }
@@ -1226,6 +1234,8 @@ export function AdminPage() {
                 'Provision a merchant tenant on DPay (or replay safely with the same external user id). Copy businessId into server EASYPAY_PARTNER_BUSINESS_ID.'}
               {tab === 'bank' &&
                 'Configure platform receiving accounts and confirm or reject inbound bank transfer donations. Enter the amount actually received when confirming.'}
+              {tab === 'donations' &&
+                'Searchable record of every donation: campaign, donor, amount, tip, checkout method, and time.'}
               {tab === 'audit' &&
                 'Filter and export the activity ledger: campaign reviews, withdrawals, user activation, and admin account changes.'}
             </p>
@@ -1508,6 +1518,12 @@ export function AdminPage() {
                         submitted {formatDate(c.createdAt)}
                       </div>
                       <div className="mt-auto pt-5 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setReviewCampaign(c)}
+                          className="px-4 py-2 rounded-lg border border-brand-200 bg-brand-50 text-brand-800 font-bold text-sm hover:bg-brand-100">
+                          Review details
+                        </button>
                         {c.verificationDocumentUrl || c.creator?.hasKycDocument ? (
                           <button
                             type="button"
@@ -1592,6 +1608,12 @@ export function AdminPage() {
                               View ID
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => setReviewCampaign(c)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold border border-brand-200 text-brand-800 hover:bg-brand-50">
+                            Review
+                          </button>
                           {c.status === 'Active' && (
                             <Link
                               to={`/campaign/${c.slug}`}
@@ -2306,6 +2328,8 @@ export function AdminPage() {
 
           {tab === 'bank' && canAccess('bank') && <BankAdminPanel />}
 
+          {tab === 'donations' && canAccess('donations') && <DonationsAdminPanel />}
+
           {tab === 'easypay' && canAccess('easypay') && (
             <div className="max-w-2xl space-y-6">
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
@@ -2599,6 +2623,41 @@ export function AdminPage() {
         </div>
       </div>
 
+
+      {reviewCampaign ? (
+        <AdminCampaignReviewModal
+          campaign={reviewCampaign}
+          busy={busyCampaignId === reviewCampaign.id}
+          onClose={() => setReviewCampaign(null)}
+          onViewId={
+            reviewCampaign.verificationDocumentUrl || reviewCampaign.creator?.hasKycDocument
+              ? () => void handleOpenVerificationDocument(reviewCampaign.id)
+              : undefined
+          }
+          onApprove={
+            reviewCampaign.status === 'PendingReview'
+              ? () => {
+                  void handleCampaignStatus(reviewCampaign.id, 'Active').then((ok) => {
+                    if (ok) {
+                      setReviewCampaign(null);
+                    }
+                  });
+                }
+              : undefined
+          }
+          onReject={
+            reviewCampaign.status === 'PendingReview'
+              ? () => {
+                  void handleCampaignStatus(reviewCampaign.id, 'Rejected').then((ok) => {
+                    if (ok) {
+                      setReviewCampaign(null);
+                    }
+                  });
+                }
+              : undefined
+          }
+        />
+      ) : null}
       {markPaidWithdrawal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50"

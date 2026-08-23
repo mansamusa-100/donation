@@ -14,6 +14,7 @@ import type {
   AdminAuditLogItem,
   AdminCampaign,
   AdminDashboardStats,
+  AdminDonationTransactionRow,
   AdminExtensionRequestRow,
   AdminContentRevisionRow,
   AdminNotificationSummary,
@@ -677,6 +678,57 @@ export const api = {
       q: params?.q
     });
     return requestBlob(`/api/admin/audit/export.csv${q}`);
+  },
+
+  getAdminDonations(params?: {
+    page?: number;
+    pageSize?: number;
+    q?: string;
+    method?: string;
+    from?: string;
+    to?: string;
+  }) {
+    const p = new URLSearchParams();
+    if (params?.page != null) {
+      p.set('page', String(params.page));
+    }
+    if (params?.pageSize != null) {
+      p.set('pageSize', String(params.pageSize));
+    }
+    if (params?.q) {
+      p.set('q', params.q);
+    }
+    if (params?.method) {
+      p.set('method', params.method);
+    }
+    if (params?.from) {
+      p.set('from', params.from);
+    }
+    if (params?.to) {
+      p.set('to', params.to);
+    }
+    const q = p.toString();
+    return request<AdminPaged<AdminDonationTransactionRow>>(
+      `/api/admin/donations${q ? `?${q}` : ''}`
+    );
+  },
+
+  exportAdminDonationsCsv(params?: { q?: string; method?: string; from?: string; to?: string }) {
+    const p = new URLSearchParams();
+    if (params?.q) {
+      p.set('q', params.q);
+    }
+    if (params?.method) {
+      p.set('method', params.method);
+    }
+    if (params?.from) {
+      p.set('from', params.from);
+    }
+    if (params?.to) {
+      p.set('to', params.to);
+    }
+    const q = p.toString();
+    return requestBlob(`/api/admin/donations/export.csv${q ? `?${q}` : ''}`);
   },
 
   getAdminPendingCampaigns(params?: { page?: number; pageSize?: number }) {

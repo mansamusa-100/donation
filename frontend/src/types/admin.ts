@@ -81,6 +81,9 @@ export interface AdminCampaign {
   verificationDocumentUrl?: string | null;
   termsAcceptedAt?: string | null;
   isTrending: boolean;
+  showPublicContact?: boolean;
+  contactPhone?: string | null;
+  contactWhatsApp?: string | null;
   status: AdminCampaignStatus;
   availableForWithdrawal?: number;
   donationPlatformFeeTotal?: number;
@@ -163,7 +166,28 @@ export type AdminPanelKey =
   | 'admins'
   | 'easypay'
   | 'bank'
+  | 'donations'
   | 'audit';
+
+export type AdminDonationCheckoutMethod = 'wave' | 'easypay' | 'bank' | 'direct';
+
+export interface AdminDonationTransactionRow {
+  id: string;
+  createdAt: string;
+  donorDisplayName: string;
+  isAnonymous: boolean;
+  amount: number;
+  platformFeeAmount: number;
+  platformTipAmount: number;
+  currency: string;
+  message: string | null;
+  checkoutMethod: AdminDonationCheckoutMethod;
+  checkoutLabel: string;
+  paymentReference: string | null;
+  easypayGatewayCode: string | null;
+  campaign: { id: string; title: string; slug: string };
+  user: { id: string; fullName: string; email: string } | null;
+}
 
 /** Known event types stored in ActivityLog (extend as you add recordActivity calls). */
 export const AUDIT_EVENT_TYPES = [

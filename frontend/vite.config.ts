@@ -7,11 +7,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['log.svg'],
+      includeAssets: ['log.svg', 'log.png', 'pwa-192.png', 'pwa-512.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'BarakahFund',
+        name: 'Barakah Fund',
         short_name: 'BarakahFund',
-        description: 'Crowdfunding platform for meaningful causes.',
+        description: 'Islamic crowdfunding for verified causes — donate securely and track impact.',
         theme_color: '#059669',
         background_color: '#fafaf9',
         display: 'standalone',
@@ -20,10 +20,22 @@ export default defineConfig({
         scope: '/',
         icons: [
           {
-            src: 'log.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
+            src: 'pwa-192.png',
+            sizes: '192x192',
+            type: 'image/png',
             purpose: 'any'
+          },
+          {
+            src: 'pwa-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: 'pwa-512-maskable.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
           }
         ]
       },
