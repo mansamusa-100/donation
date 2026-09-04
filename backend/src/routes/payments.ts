@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { prisma } from '../lib/prisma.js';
 import { serializeCampaign } from '../lib/serializers.js';
+import { recentActiveDonationsInclude } from '../lib/donationActive.js';
 import { assertCampaignAcceptsDonations } from '../lib/assertCampaignAcceptsDonations.js';
 import { HttpError } from '../lib/HttpError.js';
 import { waveCreateCheckoutSession, waveGetCheckoutSession } from '../lib/waveCheckout.js';
@@ -239,7 +240,7 @@ paymentsRouter.post(
       const campaign = await prisma.campaign.findUnique({
         where: { id: intent.campaignId },
         include: {
-          donations: { orderBy: { createdAt: 'desc' }, take: 10 }
+          donations: recentActiveDonationsInclude(10)
         }
       });
       res.json({

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { prisma } from '../lib/prisma.js';
 import { serializeCampaign, serializeDonation } from '../lib/serializers.js';
+import { recentActiveDonationsInclude } from '../lib/donationActive.js';
 import { authenticate, optionalAuthenticate, requireEmailVerified, AuthRequest } from '../lib/auth.js';
 import { recordActivity } from '../lib/activityLog.js';
 import {
@@ -282,10 +283,7 @@ campaignsRouter.get(
             ? [{ createdAt: 'desc' }]
             : [{ isTrending: 'desc' }, { createdAt: 'desc' }],
       include: {
-        donations: {
-          orderBy: { createdAt: 'desc' },
-          take: 5
-        }
+        donations: recentActiveDonationsInclude(5)
       }
     });
 
@@ -325,10 +323,7 @@ campaignsRouter.get(
       where: { creatorId: userId },
       orderBy: { createdAt: 'desc' },
       include: {
-        donations: {
-          orderBy: { createdAt: 'desc' },
-          take: 5
-        }
+        donations: recentActiveDonationsInclude(5)
       }
     });
 
@@ -357,7 +352,9 @@ campaignsRouter.get(
     const totals = {
       totalRaised: campaigns.reduce((sum, c) => sum + c.raisedAmount, 0),
       totalDonors: campaigns.reduce((sum, c) => sum + c.donorCount, 0),
-      totalGiven: donationsMade.reduce((sum, d) => sum + d.amount, 0)
+      totalGiven: donationsMade
+        .filter((d) => d.reversedAt == null)
+        .reduce((sum, d) => sum + d.amount, 0)
     };
 
     const withdrawalRows = await prisma.withdrawalRequest.findMany({
@@ -454,7 +451,8 @@ campaignsRouter.get(
         currency: d.currency,
         timeAgo: serializeDonation(d).timeAgo,
         campaignTitle: d.campaign.title,
-        campaignSlug: d.campaign.slug
+        campaignSlug: d.campaign.slug,
+        reversedAt: d.reversedAt?.toISOString() ?? null
       })),
       donationsMade: donationsMade.map((d) => ({
         id: d.id,
@@ -463,7 +461,8 @@ campaignsRouter.get(
         currency: d.currency,
         timeAgo: serializeDonation(d).timeAgo,
         campaignTitle: d.campaign.title,
-        campaignSlug: d.campaign.slug
+        campaignSlug: d.campaign.slug,
+        reversedAt: d.reversedAt?.toISOString() ?? null
       })),
       bankTransfers: bankTransferRows.map((row) => ({
         ...serializeBankTransferIntent(row),
@@ -665,7 +664,7 @@ campaignsRouter.get(
     }
 
     const donations = await prisma.donation.findMany({
-      where: { campaignId: campaign.id },
+      where: { campaignId: campaign.id, reversedAt: null },
       orderBy: { createdAt: 'desc' },
       take: 500
     });
@@ -680,10 +679,7 @@ campaignsRouter.get(
     const campaign = await prisma.campaign.findUnique({
       where: { slug: String(req.params.slug) },
       include: {
-        donations: {
-          orderBy: { createdAt: 'desc' },
-          take: 5
-        }
+        donations: recentActiveDonationsInclude(5)
       }
     });
 
@@ -742,10 +738,7 @@ campaignsRouter.patch(
         contactWhatsApp: body.contactWhatsApp
       },
       include: {
-        donations: {
-          orderBy: { createdAt: 'desc' },
-          take: 5
-        }
+        donations: recentActiveDonationsInclude(5)
       }
     });
 
@@ -799,7 +792,7 @@ campaignsRouter.post(
       await tryFinalizeCampaignEnded(tx, campaign.id);
       return tx.campaign.findUnique({
         where: { id: campaign.id },
-        include: { donations: { orderBy: { createdAt: 'desc' }, take: 10 } }
+        include: { donations: recentActiveDonationsInclude(10) }
       });
     });
 
@@ -1292,10 +1285,7 @@ campaignsRouter.post(
     const updatedCampaign = await prisma.campaign.findUnique({
       where: { id: campaign.id },
       include: {
-        donations: {
-          orderBy: { createdAt: 'desc' },
-          take: 10
-        }
+        donations: recentActiveDonationsInclude(10)
       }
     });
 

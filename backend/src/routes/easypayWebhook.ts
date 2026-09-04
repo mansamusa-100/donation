@@ -9,6 +9,7 @@ import {
   applyEasypaySnakeCaseAliases
 } from '../lib/easypayPartnerPayload.js';
 import { finalizeEasypayIntentPaid, EasypayAmountMismatchError } from '../lib/finalizeEasypayIntent.js';
+import { reverseEasypayIntent } from '../lib/reverseEasypayIntent.js';
 
 function verifyEasypayPartnerWebhook(
   rawBody: string,
@@ -34,7 +35,7 @@ const webhookBodySchema = z.object({
 });
 
 function normalizePartnerEvent(event: string): string {
-  return event.trim().toLowerCase().replace(/[\s-]+/g, '.');
+  return event.trim().toLowerCase().replace(/[\s._-]+/g, '.');
 }
 
 function isPaymentCompletedEvent(event: string): boolean {
@@ -44,6 +45,32 @@ function isPaymentCompletedEvent(event: string): boolean {
     n === 'payment.complete' ||
     n === 'payment.succeeded' ||
     n === 'payment.success'
+  );
+}
+
+const REVERSAL_EVENT_TOKENS = new Set([
+  'payment.reversed',
+  'payment.reversal',
+  'payment.refunded',
+  'payment.refund',
+  'payment.chargeback',
+  'order.reversed',
+  'order.refunded',
+  'reversed',
+  'reversal',
+  'refunded',
+  'refund',
+  'chargeback'
+]);
+
+function isPaymentReversedEvent(event: string, paymentStatus?: string): boolean {
+  const tokens = [event, paymentStatus ?? ''].map(normalizePartnerEvent).filter(Boolean);
+  return tokens.some(
+    (t) =>
+      REVERSAL_EVENT_TOKENS.has(t) ||
+      t.endsWith('.reversed') ||
+      t.endsWith('.refunded') ||
+      t.endsWith('.chargeback')
   );
 }
 
@@ -82,7 +109,51 @@ export async function handleEasypayPartnerWebhook(req: Request, res: Response): 
     return;
   }
 
-  const { event, paymentId, partnerExternalBookingId, amount, paymentStatus } = body.data;
+  const { event, paymentId, partnerExternalBookingId, amount, paymentStatus, reason } = body.data;
+
+  if (isPaymentReversedEvent(event, paymentStatus)) {
+    if (!partnerExternalBookingId) {
+      console.warn('[easypay webhook] reversal missing partnerExternalBookingId', {
+        event,
+        paymentId,
+        paymentStatus
+      });
+      res.status(400).json({ message: 'Missing partnerExternalBookingId' });
+      return;
+    }
+
+    try {
+      const result = await reverseEasypayIntent({
+        partnerExternalBookingId,
+        reason: reason ?? paymentStatus ?? event
+      });
+      if (result.unknownBooking) {
+        console.warn('[easypay webhook] reversal for unknown partnerExternalBookingId', partnerExternalBookingId);
+      }
+    } catch (err) {
+      console.error('[easypay webhook] reverse failed', {
+        partnerExternalBookingId,
+        paymentId,
+        err
+      });
+      res.status(500).json({ message: 'Failed to record reversal' });
+      return;
+    }
+
+    const reversalPaymentId = paymentId?.trim() || `epay-reversal:${partnerExternalBookingId}`;
+    try {
+      await prisma.easypayWebhookReceipt.create({
+        data: { paymentId: reversalPaymentId, event: 'payment.reversed' }
+      });
+    } catch (e) {
+      if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) {
+        console.error('[easypay webhook] reversal receipt create failed', e);
+      }
+    }
+
+    res.status(200).json({ ok: true, reversed: true });
+    return;
+  }
 
   if (!isPaymentCompletedEvent(event)) {
     // Still ACK cancelled/failed so DPay stops retrying.

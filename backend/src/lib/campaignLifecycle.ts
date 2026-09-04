@@ -40,7 +40,7 @@ export async function getCampaignWithdrawalBalances(
 ): Promise<CampaignWithdrawalBalances> {
   const [donationFeeAgg, paidAgg, committedAgg] = await Promise.all([
     db.donation.aggregate({
-      where: { campaignId },
+      where: { campaignId, reversedAt: null },
       _sum: { platformFeeAmount: true }
     }),
     db.withdrawalRequest.aggregate({
@@ -127,7 +127,7 @@ export async function getLastDonationAt(
   db: {
     donation: {
       findFirst: (args: {
-        where: { campaignId: string };
+        where: { campaignId: string; reversedAt: null };
         orderBy: { createdAt: 'desc' };
         select: { createdAt: true };
       }) => Promise<{ createdAt: Date } | null>;
@@ -136,7 +136,7 @@ export async function getLastDonationAt(
   campaignId: string
 ): Promise<Date | null> {
   const row = await db.donation.findFirst({
-    where: { campaignId },
+    where: { campaignId, reversedAt: null },
     orderBy: { createdAt: 'desc' },
     select: { createdAt: true }
   });

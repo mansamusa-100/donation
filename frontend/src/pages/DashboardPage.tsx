@@ -494,9 +494,14 @@ export function DashboardPage() {
                               <Link to={`/campaign/${d.campaignSlug}`} className="text-brand-600 hover:underline">
                                 {d.campaignTitle}
                               </Link>
+                              {d.reversedAt ? (
+                                <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-rose-100 text-rose-800">
+                                  Reversed
+                                </span>
+                              ) : null}
                             </div>
                           </div>
-                          <div className="font-bold text-brand-600 shrink-0">
+                          <div className={`font-bold shrink-0 ${d.reversedAt ? 'text-slate-400 line-through' : 'text-brand-600'}`}>
                             {d.currency === 'USD' ? '$' : 'D'}
                             {d.amount.toLocaleString()}
                           </div>
@@ -594,9 +599,16 @@ export function DashboardPage() {
                               className="font-bold text-surface-900 text-sm hover:text-brand-600">
                               {d.campaignTitle}
                             </Link>
-                            <div className="text-xs text-surface-500 mt-0.5">{d.timeAgo}</div>
+                            <div className="text-xs text-surface-500 mt-0.5">
+                              {d.timeAgo}
+                              {d.reversedAt ? (
+                                <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-rose-100 text-rose-800">
+                                  Reversed
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
-                          <div className="font-bold text-violet-700 shrink-0">
+                          <div className={`font-bold shrink-0 ${d.reversedAt ? 'text-slate-400 line-through' : 'text-violet-700'}`}>
                             {d.currency === 'USD' ? '$' : 'D'}
                             {d.amount.toLocaleString()}
                           </div>

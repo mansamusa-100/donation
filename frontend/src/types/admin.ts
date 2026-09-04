@@ -171,9 +171,14 @@ export type AdminPanelKey =
 
 export type AdminDonationCheckoutMethod = 'wave' | 'easypay' | 'bank' | 'direct';
 
+export type AdminDonationTransactionStatus = 'completed' | 'reversed';
+
 export interface AdminDonationTransactionRow {
   id: string;
   createdAt: string;
+  status: AdminDonationTransactionStatus;
+  reversedAt: string | null;
+  reversalReason: string | null;
   donorDisplayName: string;
   isAnonymous: boolean;
   amount: number;
@@ -205,6 +210,7 @@ export const AUDIT_EVENT_TYPES = [
   'EASYPAY_PROVISION',
   'BANK_TRANSFER_CONFIRMED',
   'BANK_TRANSFER_REJECTED',
+  'DONATION_REVERSED',
   'USER_ACCOUNT_CLOSED'
 ] as const;
 

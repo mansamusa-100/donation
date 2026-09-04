@@ -44,6 +44,15 @@ export function PaymentEasypayReturnPage() {
             }
             return;
           }
+          if (result.status === 'reversed') {
+            if (!cancelled) {
+              setErrorMessage(
+                'This payment was reversed by DPay, so it was not credited to the campaign. If this looks wrong, contact support with your reference.'
+              );
+              setPhase('error');
+            }
+            return;
+          }
         } catch (e) {
           if (!cancelled) {
             setErrorMessage(e instanceof Error ? e.message : 'Could not confirm payment');

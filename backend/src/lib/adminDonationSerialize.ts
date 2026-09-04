@@ -73,9 +73,13 @@ export function resolveDonationCheckout(donation: DonationWithCheckout): {
 
 export function serializeAdminDonationTransaction(donation: DonationWithCheckout) {
   const checkout = resolveDonationCheckout(donation);
+  const reversed = donation.reversedAt != null;
   return {
     id: donation.id,
     createdAt: donation.createdAt.toISOString(),
+    status: reversed ? ('reversed' as const) : ('completed' as const),
+    reversedAt: donation.reversedAt?.toISOString() ?? null,
+    reversalReason: donation.reversalReason ?? null,
     donorDisplayName: donation.isAnonymous ? 'Anonymous' : donation.donorName,
     isAnonymous: donation.isAnonymous,
     amount: donation.amount,

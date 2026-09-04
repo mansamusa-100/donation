@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import type {
   AdminDonationCheckoutMethod,
-  AdminDonationTransactionRow
+  AdminDonationTransactionRow,
+  AdminDonationTransactionStatus
 } from '../../types/admin';
 
 const PAGE_SIZE = 25;
@@ -37,11 +38,16 @@ export function DonationsAdminPanel() {
   const [searchInput, setSearchInput] = useState('');
   const [q, setQ] = useState('');
   const [method, setMethod] = useState<AdminDonationCheckoutMethod | ''>('');
+  const [status, setStatus] = useState<AdminDonationTransactionStatus | ''>('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [loadError, setLoadError] = useState('');
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState('');
+  const [reverseRow, setReverseRow] = useState<AdminDonationTransactionRow | null>(null);
+  const [reverseReason, setReverseReason] = useState('');
+  const [reverseBusy, setReverseBusy] = useState(false);
+  const [reverseError, setReverseError] = useState('');
 
   useEffect(() => {
     const id = window.setTimeout(() => setQ(searchInput.trim()), 400);
@@ -50,7 +56,7 @@ export function DonationsAdminPanel() {
 
   useEffect(() => {
     setPage(1);
-  }, [q, method, from, to]);
+  }, [q, method, status, from, to]);
 
   const load = useCallback(async () => {
     setLoadError('');
@@ -60,6 +66,7 @@ export function DonationsAdminPanel() {
         pageSize: PAGE_SIZE,
         ...(q ? { q } : {}),
         ...(method ? { method } : {}),
+        ...(status ? { status } : {}),
         ...(from ? { from } : {}),
         ...(to ? { to } : {})
       });
@@ -70,7 +77,7 @@ export function DonationsAdminPanel() {
       setItems([]);
       setTotal(0);
     }
-  }, [page, q, method, from, to]);
+  }, [page, q, method, status, from, to]);
 
   useEffect(() => {
     void load();
@@ -83,6 +90,7 @@ export function DonationsAdminPanel() {
       const blob = await api.exportAdminDonationsCsv({
         ...(q ? { q } : {}),
         ...(method ? { method } : {}),
+        ...(status ? { status } : {}),
         ...(from ? { from } : {}),
         ...(to ? { to } : {})
       });
@@ -96,6 +104,28 @@ export function DonationsAdminPanel() {
       setExportError(e instanceof Error ? e.message : 'Export failed');
     } finally {
       setExportBusy(false);
+    }
+  };
+
+  const handleReverse = async () => {
+    if (!reverseRow) {
+      return;
+    }
+    setReverseError('');
+    setReverseBusy(true);
+    try {
+      const reason = reverseReason.trim();
+      const updated = await api.reverseAdminDonation(
+        reverseRow.id,
+        reason ? { reason } : undefined
+      );
+      setItems((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
+      setReverseRow(null);
+      setReverseReason('');
+    } catch (e) {
+      setReverseError(e instanceof Error ? e.message : 'Could not reverse this donation');
+    } finally {
+      setReverseBusy(false);
     }
   };
 
@@ -120,11 +150,14 @@ export function DonationsAdminPanel() {
         <div>
           <h2 className="font-display font-bold text-lg text-slate-900">Donation transactions</h2>
           <p className="text-sm text-slate-600 mt-1">
-            Search by campaign name, donor name, or payment reference. Anonymous gifts show as Anonymous.
+            Search by campaign name, donor name, or payment reference. Anonymous gifts show as
+            Anonymous. Reversed DPay payments stay on this list and are removed from campaign totals.
+            For a mismatch that already happened, use Reverse on that DPay row. New DPay reversals
+            apply automatically.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
           <div className="sm:col-span-2 xl:col-span-2">
             <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="tx-search">
               Search
@@ -152,6 +185,20 @@ export function DonationsAdminPanel() {
               <option value="easypay">DPay</option>
               <option value="bank">Bank transfer</option>
               <option value="direct">Direct</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="tx-status">
+              Status
+            </label>
+            <select
+              id="tx-status"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as AdminDonationTransactionStatus | '')}
+              className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white">
+              <option value="">All statuses</option>
+              <option value="completed">Completed</option>
+              <option value="reversed">Reversed</option>
             </select>
           </div>
           <div>
@@ -188,13 +235,14 @@ export function DonationsAdminPanel() {
             className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:opacity-50">
             {exportBusy ? 'Exporting…' : 'Export CSV'}
           </button>
-          {q || method || from || to ? (
+          {q || method || status || from || to ? (
             <button
               type="button"
               onClick={() => {
                 setSearchInput('');
                 setQ('');
                 setMethod('');
+                setStatus('');
                 setFrom('');
                 setTo('');
               }}
@@ -211,26 +259,46 @@ export function DonationsAdminPanel() {
             <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Time</th>
+                <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Campaign</th>
                 <th className="px-4 py-3">Donor</th>
                 <th className="px-4 py-3">Amount</th>
                 <th className="px-4 py-3">Tip</th>
                 <th className="px-4 py-3">Checkout</th>
                 <th className="px-4 py-3">Reference</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                  <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
                     No donation records match these filters.
                   </td>
                 </tr>
               ) : (
                 items.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50/80 align-top">
+                  <tr
+                    key={row.id}
+                    className={`align-top ${row.status === 'reversed' ? 'bg-rose-50/70' : 'hover:bg-slate-50/80'}`}>
                     <td className="px-4 py-3 whitespace-nowrap text-slate-600">
                       {formatDateTime(row.createdAt)}
+                    </td>
+                    <td className="px-4 py-3">
+                      {row.status === 'reversed' ? (
+                        <div>
+                          <span className="inline-flex px-2 py-0.5 rounded-md text-xs font-bold bg-rose-100 text-rose-900">
+                            Reversed
+                          </span>
+                          {row.reversalReason ? (
+                            <div className="text-xs text-rose-700 mt-1 max-w-[10rem]">{row.reversalReason}</div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="inline-flex px-2 py-0.5 rounded-md text-xs font-bold bg-emerald-100 text-emerald-900">
+                          Completed
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <Link
@@ -248,7 +316,7 @@ export function DonationsAdminPanel() {
                         <div className="text-xs text-slate-400 mt-0.5">{row.user.email}</div>
                       ) : null}
                     </td>
-                    <td className="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
+                    <td className={`px-4 py-3 font-semibold whitespace-nowrap ${row.status === 'reversed' ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
                       {formatGmd(row.amount)}
                       {row.platformFeeAmount > 0 ? (
                         <div className="text-xs font-normal text-slate-400">
@@ -270,6 +338,22 @@ export function DonationsAdminPanel() {
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-slate-600 break-all max-w-[12rem]">
                       {row.paymentReference ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {row.status === 'completed' && row.checkoutMethod === 'easypay' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReverseRow(row);
+                            setReverseReason('');
+                            setReverseError('');
+                          }}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold text-rose-800 border border-rose-200 hover:bg-rose-50">
+                          Reverse
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -303,6 +387,62 @@ export function DonationsAdminPanel() {
           </div>
         </div>
       </div>
+
+      {reverseRow ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-5 space-y-4">
+            <h3 className="font-display font-bold text-slate-900">Reverse DPay donation</h3>
+            <p className="text-sm text-slate-600">
+              This removes <strong>{formatGmd(reverseRow.amount)}</strong>
+              {reverseRow.platformTipAmount > 0
+                ? ` (plus ${formatGmd(reverseRow.platformTipAmount)} tip)`
+                : ''}{' '}
+              from <strong>{reverseRow.campaign.title}</strong> so our books match DPay. Use this
+              when DPay already reversed the payment. This cannot be undone.
+            </p>
+            {reverseRow.paymentReference ? (
+              <p className="text-xs font-mono text-slate-500 break-all">
+                Reference: {reverseRow.paymentReference}
+              </p>
+            ) : null}
+            {reverseError ? (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm font-medium">
+                {reverseError}
+              </div>
+            ) : null}
+            <label className="block text-sm">
+              <span className="text-xs font-bold text-slate-500 uppercase">Reason (optional)</span>
+              <textarea
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                rows={2}
+                value={reverseReason}
+                onChange={(e) => setReverseReason(e.target.value)}
+                placeholder="e.g. DPay already reversed this payment"
+              />
+            </label>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                disabled={reverseBusy}
+                onClick={() => {
+                  setReverseRow(null);
+                  setReverseReason('');
+                  setReverseError('');
+                }}
+                className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-bold disabled:opacity-50">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={reverseBusy}
+                onClick={() => void handleReverse()}
+                className="px-4 py-2 rounded-lg bg-rose-700 text-white text-sm font-bold disabled:opacity-50">
+                {reverseBusy ? 'Reversing…' : 'Reverse donation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

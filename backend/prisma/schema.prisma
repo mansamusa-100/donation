@@ -214,6 +214,8 @@ model EasypayPaymentIntent {
   avatarUrl                String?
   lastGatewayCode          String?
   donationId               String?   @unique
+  /// Set when DPay reports this payment was reversed/refunded.
+  reversedAt               DateTime?
   donation                 Donation? @relation(fields: [donationId], references: [id], onDelete: SetNull)
   campaign                 Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   user                     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -295,6 +297,8 @@ model PlatformTip {
   currency             Currency  @default(GMD)
   campaignId           String?
   createdAt            DateTime    @default(now())
+  /// Set when the related donation payment was reversed.
+  reversedAt           DateTime?
   wavePaymentIntent    WavePaymentIntent? @relation(fields: [wavePaymentIntentId], references: [id], onDelete: SetNull)
   easypayPaymentIntent EasypayPaymentIntent? @relation(fields: [easypayPaymentIntentId], references: [id], onDelete: SetNull)
   bankTransferIntent   BankTransferIntent?   @relation(fields: [bankTransferIntentId], references: [id], onDelete: SetNull)
@@ -409,6 +413,9 @@ model Donation {
   isAnonymous Boolean  @default(false)
   avatarUrl   String?
   createdAt   DateTime @default(now())
+  /// Null while the gift is credited. Set when the payment provider reversed it.
+  reversedAt     DateTime?
+  reversalReason String?
   campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   wavePaymentIntent WavePaymentIntent?
@@ -416,6 +423,7 @@ model Donation {
   bankTransferIntent BankTransferIntent?
 
   @@index([campaignId, createdAt])
+  @@index([campaignId, reversedAt])
 }
 
 model PlatformStat {

@@ -549,7 +549,7 @@ export const api = {
 
   getEasypayPaymentStatus(partnerExternalBookingId: string) {
     return request<{
-      status: 'succeeded' | 'pending';
+      status: 'succeeded' | 'pending' | 'reversed';
       campaign: Campaign | null;
       campaignDonationAmount: number;
       platformTipAmount: number;
@@ -685,6 +685,7 @@ export const api = {
     pageSize?: number;
     q?: string;
     method?: string;
+    status?: string;
     from?: string;
     to?: string;
   }) {
@@ -701,6 +702,9 @@ export const api = {
     if (params?.method) {
       p.set('method', params.method);
     }
+    if (params?.status) {
+      p.set('status', params.status);
+    }
     if (params?.from) {
       p.set('from', params.from);
     }
@@ -713,13 +717,22 @@ export const api = {
     );
   },
 
-  exportAdminDonationsCsv(params?: { q?: string; method?: string; from?: string; to?: string }) {
+  exportAdminDonationsCsv(params?: {
+    q?: string;
+    method?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+  }) {
     const p = new URLSearchParams();
     if (params?.q) {
       p.set('q', params.q);
     }
     if (params?.method) {
       p.set('method', params.method);
+    }
+    if (params?.status) {
+      p.set('status', params.status);
     }
     if (params?.from) {
       p.set('from', params.from);
@@ -729,6 +742,16 @@ export const api = {
     }
     const q = p.toString();
     return requestBlob(`/api/admin/donations/export.csv${q ? `?${q}` : ''}`);
+  },
+
+  reverseAdminDonation(donationId: string, payload?: { reason?: string }) {
+    return request<AdminDonationTransactionRow>(
+      `/api/admin/donations/${encodeURIComponent(donationId)}/reverse`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {})
+      }
+    );
   },
 
   getAdminPendingCampaigns(params?: { page?: number; pageSize?: number }) {

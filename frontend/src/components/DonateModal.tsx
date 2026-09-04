@@ -291,6 +291,13 @@ export function DonateModal({
           setIsProcessing(false);
           return;
         }
+        if (st.status === 'reversed') {
+          setError(
+            'This payment was reversed by DPay, so it was not credited to the campaign.'
+          );
+          setIsProcessing(false);
+          return;
+        }
         await new Promise((r) => setTimeout(r, 1200));
       }
       setError(

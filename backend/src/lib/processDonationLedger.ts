@@ -107,3 +107,58 @@ export async function applyDonationToLedger(
 
   return donation;
 }
+
+/**
+ * Marks a donation reversed and unwinds campaign + platform raised totals.
+ * Idempotent: a second call for the same row is a no-op.
+ */
+export async function reverseDonationOnLedger(
+  tx: Prisma.TransactionClient,
+  donation: { id: string; campaignId: string; amount: number },
+  params: { reason?: string | null; now?: Date }
+): Promise<'reversed' | 'already_reversed'> {
+  const now = params.now ?? new Date();
+  const claimed = await tx.donation.updateMany({
+    where: { id: donation.id, reversedAt: null },
+    data: {
+      reversedAt: now,
+      reversalReason: params.reason ?? undefined
+    }
+  });
+  if (claimed.count !== 1) {
+    return 'already_reversed';
+  }
+
+  await tx.campaign.update({
+    where: { id: donation.campaignId },
+    data: {
+      raisedAmount: { decrement: donation.amount },
+      donorCount: { decrement: 1 }
+    }
+  });
+  await tx.$executeRaw`
+    UPDATE "Campaign"
+    SET
+      "raisedAmount" = CASE WHEN "raisedAmount" < 0 THEN 0 ELSE "raisedAmount" END,
+      "donorCount" = CASE WHEN "donorCount" < 0 THEN 0 ELSE "donorCount" END
+    WHERE id = ${donation.campaignId}
+  `;
+
+  await ensurePlatformStatRow(tx);
+  await tx.platformStat.update({
+    where: { id: 'platform' },
+    data: {
+      totalRaised: { decrement: donation.amount },
+      totalDonors: { decrement: 1 }
+    }
+  });
+  await tx.$executeRaw`
+    UPDATE "PlatformStat"
+    SET
+      "totalRaised" = CASE WHEN "totalRaised" < 0 THEN 0 ELSE "totalRaised" END,
+      "totalDonors" = CASE WHEN "totalDonors" < 0 THEN 0 ELSE "totalDonors" END
+    WHERE id = 'platform'
+  `;
+
+  return 'reversed';
+}

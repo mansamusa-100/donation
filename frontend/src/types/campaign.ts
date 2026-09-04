@@ -156,6 +156,7 @@ export interface CreatorReceivedDonation {
   timeAgo: string;
   campaignTitle: string;
   campaignSlug: string;
+  reversedAt?: string | null;
 }
 
 export interface CreatorDashboardOverview {

@@ -78,6 +78,7 @@ export function serializeCampaign(
     contactPhone: revealContact ? campaign.contactPhone ?? null : null,
     contactWhatsApp: revealContact ? campaign.contactWhatsApp ?? null : null,
     recentDonors: campaign.donations
+      .filter((d: Donation) => d.reversedAt == null)
       .sort((a: Donation, b: Donation) => b.createdAt.getTime() - a.createdAt.getTime())
       .map(serializeDonation)
   };

@@ -144,6 +144,16 @@ export function PaymentEasypayPendingPage() {
             }
             return;
           }
+          if (result.status === 'reversed') {
+            if (!cancelled) {
+              clearEasypayPendingWalletSession(ref);
+              setErrorMessage(
+                'This payment was reversed by DPay, so it was not credited to the campaign. If this looks wrong, contact support with your reference.'
+              );
+              setStatusPhase('error');
+            }
+            return;
+          }
         } catch (e) {
           if (cancelled) {
             return;

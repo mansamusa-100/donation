@@ -19,7 +19,8 @@ export function applyEasypaySnakeCaseAliases(r: Record<string, unknown>): void {
   const pairs: [string, string][] = [
     ['payment_id', 'paymentId'],
     ['partner_external_booking_id', 'partnerExternalBookingId'],
-    ['payment_status', 'paymentStatus']
+    ['payment_status', 'paymentStatus'],
+    ['reversal_reason', 'reason']
   ];
   for (const [snake, camel] of pairs) {
     if (r[camel] == null && r[snake] != null) {

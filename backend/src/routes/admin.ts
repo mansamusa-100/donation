@@ -41,6 +41,7 @@ import {
   serializeAdminDonationTransaction,
   type DonationWithCheckout
 } from '../lib/adminDonationSerialize.js';
+import { reverseEasypayIntent } from '../lib/reverseEasypayIntent.js';
 import { HttpError } from '../lib/HttpError.js';
 import { boundedMoneySchema } from '../lib/money.js';
 import { markOrganizerKycVerifiedOnCampaignApprove } from '../lib/userKyc.js';
@@ -100,6 +101,13 @@ function parseDonationFilters(query: Request['query']): {
       end.setUTCHours(23, 59, 59, 999);
       conditions.push({ createdAt: { lte: end } });
     }
+  }
+
+  const statusRaw = typeof query.status === 'string' ? query.status.trim().toLowerCase() : '';
+  if (statusRaw === 'reversed') {
+    conditions.push({ reversedAt: { not: null } });
+  } else if (statusRaw === 'completed') {
+    conditions.push({ reversedAt: null });
   }
 
   const methodRaw = typeof query.method === 'string' ? query.method.trim().toLowerCase() : '';
@@ -1615,8 +1623,11 @@ adminRouter.get(
       prisma.campaign.count({ where: { status: 'PendingReview' } }),
       prisma.user.count(),
       prisma.user.count({ where: { role: 'ADMIN' } }),
-      prisma.donation.count(),
-      prisma.donation.aggregate({ _sum: { platformFeeAmount: true } }),
+      prisma.donation.count({ where: { reversedAt: null } }),
+      prisma.donation.aggregate({
+        where: { reversedAt: null },
+        _sum: { platformFeeAmount: true }
+      }),
       prisma.withdrawalRequest.aggregate({
         where: { status: 'Paid' },
         _sum: { processingFeeAmount: true }
@@ -1640,7 +1651,7 @@ adminRouter.get(
       donations: totalDonations,
       platformStats: stats,
       fees: {
-        /** Sum of 1.9% donation fees (all recorded donations). */
+        /** Sum of 1.9% donation fees (completed donations; reversed gifts excluded). */
         totalDonationPlatformFees: donationFeeSum._sum.platformFeeAmount ?? 0,
         /** Sum of 3% withdrawal processing fees for payouts marked Paid. */
         totalWithdrawalProcessingFees: withdrawalFeePaidSum._sum.processingFeeAmount ?? 0
@@ -2235,6 +2246,9 @@ adminRouter.get(
 
     const header = [
       'createdAt',
+      'status',
+      'reversedAt',
+      'reversalReason',
       'campaignTitle',
       'campaignSlug',
       'donor',
@@ -2256,6 +2270,9 @@ adminRouter.get(
         const item = serializeAdminDonationTransaction(row as DonationWithCheckout);
         return [
           csvEscape(item.createdAt),
+          csvEscape(item.status),
+          csvEscape(item.reversedAt ?? ''),
+          csvEscape(item.reversalReason ?? ''),
           csvEscape(item.campaign.title),
           csvEscape(item.campaign.slug),
           csvEscape(item.donorDisplayName),
@@ -2303,6 +2320,73 @@ adminRouter.get(
       page,
       pageSize
     });
+  })
+);
+
+const reverseDonationSchema = z.object({
+  reason: z.string().max(500).optional().nullable()
+});
+
+adminRouter.post(
+  '/donations/:donationId/reverse',
+  requireAdminPanel('donations'),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const donationId = String(req.params.donationId);
+    const body = reverseDonationSchema.parse(req.body ?? {});
+
+    const donation = await prisma.donation.findUnique({
+      where: { id: donationId },
+      include: {
+        easypayPaymentIntent: {
+          select: { partnerExternalBookingId: true }
+        }
+      }
+    });
+
+    if (!donation) {
+      res.status(404).json({ message: 'Donation not found' });
+      return;
+    }
+    if (donation.reversedAt) {
+      res.status(409).json({ message: 'This donation is already reversed.' });
+      return;
+    }
+    if (!donation.easypayPaymentIntent) {
+      res.status(400).json({
+        message: 'Only DPay donations can be reversed here. Use this when DPay already reversed the payment.'
+      });
+      return;
+    }
+
+    const reason =
+      body.reason?.trim() ||
+      'Manual admin reversal (DPay already reversed this payment)';
+
+    const result = await reverseEasypayIntent({
+      partnerExternalBookingId: donation.easypayPaymentIntent.partnerExternalBookingId,
+      reason,
+      actorId: req.userId ?? null
+    });
+
+    if (result.alreadyReversed) {
+      res.status(409).json({ message: 'This donation is already reversed.' });
+      return;
+    }
+    if (!result.reversed) {
+      res.status(500).json({ message: 'Could not reverse this donation.' });
+      return;
+    }
+
+    const updated = await prisma.donation.findUnique({
+      where: { id: donationId },
+      include: donationCheckoutInclude
+    });
+    if (!updated) {
+      res.status(500).json({ message: 'Donation reversed but could not reload the record.' });
+      return;
+    }
+
+    res.json(serializeAdminDonationTransaction(updated as DonationWithCheckout));
   })
 );
 

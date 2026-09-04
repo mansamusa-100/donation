@@ -44,7 +44,7 @@ export async function getAccountCloseBlockers(userId: string): Promise<string[]>
       where: { userId, donationId: null }
     }),
     prisma.easypayPaymentIntent.count({
-      where: { userId, donationId: null }
+      where: { userId, donationId: null, reversedAt: null }
     })
   ]);
 

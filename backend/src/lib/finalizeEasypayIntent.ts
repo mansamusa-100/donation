@@ -9,6 +9,7 @@ import { easypayCreateOrder, EasypayPartnerApiError } from './easypayPartner.js'
 import { partnerCreateOrderErrorIndicatesAlreadyPaid } from './easypayPartnerPayload.js';
 import { roundMoney } from './money.js';
 import { lockEasypayPaymentIntentForUpdate } from './paymentIntentLock.js';
+import { recentActiveDonationsInclude } from './donationActive.js';
 
 /** Parse a reported GMD total in bututs/cents so decimal amounts compare exactly. */
 export function parseGmdTotalCents(value: unknown): number | null {
@@ -67,7 +68,7 @@ export class EasypayAmountMismatchError extends Error {
 type IntentWithCampaign = EasypayPaymentIntent & { campaign: Campaign };
 
 export type EasypayStatusResult = {
-  status: 'succeeded' | 'pending';
+  status: 'succeeded' | 'pending' | 'reversed';
   campaign: ReturnType<typeof serializeCampaign> | null;
   campaignDonationAmount: number;
   platformTipAmount: number;
@@ -86,7 +87,7 @@ export async function finalizeEasypayIntentPaid(params: {
 }): Promise<{ recorded: boolean }> {
   const { intent, webhookPaymentId } = params;
 
-  if (intent.donationId) {
+  if (intent.donationId || intent.reversedAt) {
     return { recorded: false };
   }
 
@@ -117,7 +118,7 @@ export async function finalizeEasypayIntentPaid(params: {
     const locked = await tx.easypayPaymentIntent.findUnique({
       where: { id: intent.id }
     });
-    if (!locked || locked.donationId) {
+    if (!locked || locked.donationId || locked.reversedAt) {
       return false;
     }
 
@@ -134,7 +135,7 @@ export async function finalizeEasypayIntentPaid(params: {
     });
 
     const claimed = await tx.easypayPaymentIntent.updateMany({
-      where: { id: intent.id, donationId: null },
+      where: { id: intent.id, donationId: null, reversedAt: null },
       data: { donationId: donation.id }
     });
     if (claimed.count !== 1) {
@@ -212,11 +213,21 @@ export async function loadEasypayIntentForStatus(
 
   const chargeTotal = roundMoney(intent.amount + intent.platformTipAmount);
 
+  if (intent.reversedAt) {
+    return {
+      status: 'reversed',
+      campaign: null,
+      campaignDonationAmount: intent.amount,
+      platformTipAmount: intent.platformTipAmount,
+      chargeTotal
+    };
+  }
+
   if (intent.donationId) {
     const campaign = await prisma.campaign.findUnique({
       where: { id: intent.campaignId },
       include: {
-        donations: { orderBy: { createdAt: 'desc' }, take: 10 }
+        donations: recentActiveDonationsInclude(10)
       }
     });
     return {
@@ -253,7 +264,7 @@ export async function reconcileEasypayIntentIfPaid(
     throw new Error('Payment session not found');
   }
 
-  if (intent.donationId) {
+  if (intent.donationId || intent.reversedAt) {
     return loadEasypayIntentForStatus(partnerExternalBookingId);
   }
 

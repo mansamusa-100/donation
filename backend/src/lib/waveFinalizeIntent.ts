@@ -6,6 +6,7 @@ import { serializeCampaign } from './serializers.js';
 import { tryFinalizeCampaignEnded } from './campaignLifecycle.js';
 import { sendDonationThankYouEmail } from './mail.js';
 import { lockWavePaymentIntentForUpdate } from './paymentIntentLock.js';
+import { recentActiveDonationsInclude } from './donationActive.js';
 
 export type WaveCheckoutSnapshot = {
   amount: string;
@@ -44,7 +45,7 @@ export async function finalizeWaveIntentFromCheckoutSession(
     const campaign = await prisma.campaign.findUnique({
       where: { id: intent.campaignId },
       include: {
-        donations: { orderBy: { createdAt: 'desc' }, take: 10 }
+        donations: recentActiveDonationsInclude(10)
       }
     });
     return {
@@ -85,7 +86,7 @@ export async function finalizeWaveIntentFromCheckoutSession(
       const campaign = await tx.campaign.findUnique({
         where: { id: intent.campaignId },
         include: {
-          donations: { orderBy: { createdAt: 'desc' }, take: 10 }
+          donations: recentActiveDonationsInclude(10)
         }
       });
       return { kind: 'already_completed' as const, campaign };
@@ -132,7 +133,7 @@ export async function finalizeWaveIntentFromCheckoutSession(
     const campaign = await tx.campaign.findUnique({
       where: { id: intent.campaignId },
       include: {
-        donations: { orderBy: { createdAt: 'desc' }, take: 10 }
+        donations: recentActiveDonationsInclude(10)
       }
     });
     return { kind: 'succeeded' as const, campaign };
