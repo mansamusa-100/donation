@@ -9,6 +9,14 @@ import type {
 
 const PAGE_SIZE = 25;
 
+/** Local calendar day as `YYYY-MM-DD` for `<input type="date">` defaults. */
+function localDateInputValue(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function formatGmd(n: number) {
   return `D${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
@@ -39,8 +47,8 @@ export function DonationsAdminPanel() {
   const [q, setQ] = useState('');
   const [method, setMethod] = useState<AdminDonationCheckoutMethod | ''>('');
   const [status, setStatus] = useState<AdminDonationTransactionStatus | ''>('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [from, setFrom] = useState(() => localDateInputValue());
+  const [to, setTo] = useState(() => localDateInputValue());
   const [loadError, setLoadError] = useState('');
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState('');
@@ -150,10 +158,10 @@ export function DonationsAdminPanel() {
         <div>
           <h2 className="font-display font-bold text-lg text-slate-900">Donation transactions</h2>
           <p className="text-sm text-slate-600 mt-1">
-            Search by campaign name, donor name, or payment reference. Anonymous gifts show as
-            Anonymous. Reversed DPay payments stay on this list and are removed from campaign totals.
-            For a mismatch that already happened, use Reverse on that DPay row. New DPay reversals
-            apply automatically.
+            Shows today’s donations by default. Widen From/To or search for older records. Anonymous
+            gifts show as Anonymous. Reversed DPay payments stay on this list and are removed from
+            campaign totals. For a mismatch that already happened, use Reverse on that DPay row. New
+            DPay reversals apply automatically.
           </p>
         </div>
 
@@ -235,19 +243,24 @@ export function DonationsAdminPanel() {
             className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold disabled:opacity-50">
             {exportBusy ? 'Exporting…' : 'Export CSV'}
           </button>
-          {q || method || status || from || to ? (
+          {q ||
+          method ||
+          status ||
+          from !== localDateInputValue() ||
+          to !== localDateInputValue() ? (
             <button
               type="button"
               onClick={() => {
+                const today = localDateInputValue();
                 setSearchInput('');
                 setQ('');
                 setMethod('');
                 setStatus('');
-                setFrom('');
-                setTo('');
+                setFrom(today);
+                setTo(today);
               }}
               className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              Clear filters
+              Reset to today
             </button>
           ) : null}
         </div>

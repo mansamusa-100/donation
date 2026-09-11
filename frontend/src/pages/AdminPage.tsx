@@ -46,6 +46,14 @@ import {
 
 type AdminTab = AdminPanelKey;
 
+/** Local calendar day as `YYYY-MM-DD` for `<input type="date">` defaults. */
+function localDateInputValue(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function formatGmd(amount: number) {
   return `D${amount.toLocaleString()}`;
 }
@@ -342,8 +350,8 @@ export function AdminPage() {
   const [auditTotal, setAuditTotal] = useState(0);
   const [auditPage, setAuditPage] = useState(1);
   const [auditType, setAuditType] = useState('');
-  const [auditFrom, setAuditFrom] = useState('');
-  const [auditTo, setAuditTo] = useState('');
+  const [auditFrom, setAuditFrom] = useState(() => localDateInputValue());
+  const [auditTo, setAuditTo] = useState(() => localDateInputValue());
   const [auditSearchInput, setAuditSearchInput] = useState('');
   const [auditQ, setAuditQ] = useState('');
   const [auditLoadError, setAuditLoadError] = useState('');
@@ -1235,9 +1243,9 @@ export function AdminPage() {
               {tab === 'bank' &&
                 'Configure platform receiving accounts and confirm or reject inbound bank transfer donations. Enter the amount actually received when confirming.'}
               {tab === 'donations' &&
-                'Searchable record of every donation: campaign, donor, amount, tip, checkout method, and time.'}
+                'Today’s donations by default. Widen the From/To dates or search to look further back.'}
               {tab === 'audit' &&
-                'Filter and export the activity ledger: campaign reviews, withdrawals, user activation, and admin account changes.'}
+                'Today’s activity by default. Use From/To and search to review older events or export.'}
             </p>
           </header>
 
@@ -2540,6 +2548,24 @@ export function AdminPage() {
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-2">
+                  {(auditType ||
+                    auditSearchInput.trim() ||
+                    auditFrom !== localDateInputValue() ||
+                    auditTo !== localDateInputValue()) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const today = localDateInputValue();
+                        setAuditType('');
+                        setAuditSearchInput('');
+                        setAuditQ('');
+                        setAuditFrom(today);
+                        setAuditTo(today);
+                      }}
+                      className="px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 whitespace-nowrap">
+                      Reset to today
+                    </button>
+                  )}
                   <button
                     type="button"
                     disabled={auditExportBusy}
@@ -2550,7 +2576,8 @@ export function AdminPage() {
                 </div>
               </div>
               <p className="text-xs text-slate-500">
-                Exports include up to 2,000 rows matching the current filters. The file is UTF‑8 with a BOM for Excel.
+                Defaults to today’s events. Change From/To to include older history. Exports include up to
+                2,000 rows matching the current filters (UTF‑8 with a BOM for Excel).
               </p>
 
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
