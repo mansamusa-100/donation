@@ -15,7 +15,11 @@ export type DonationWithCheckout = Donation & {
   wavePaymentIntent: Pick<WavePaymentIntent, 'clientReference' | 'platformTipAmount'> | null;
   easypayPaymentIntent: Pick<
     EasypayPaymentIntent,
-    'partnerExternalBookingId' | 'orderPublicCode' | 'lastGatewayCode' | 'platformTipAmount'
+    | 'partnerExternalBookingId'
+    | 'orderPublicCode'
+    | 'lastGatewayCode'
+    | 'platformTipAmount'
+    | 'reversedAt'
   > | null;
   bankTransferIntent: Pick<BankTransferIntent, 'clientReference' | 'platformTipAmount'> | null;
 };
@@ -117,7 +121,8 @@ export const donationCheckoutInclude = {
       partnerExternalBookingId: true,
       orderPublicCode: true,
       lastGatewayCode: true,
-      platformTipAmount: true
+      platformTipAmount: true,
+      reversedAt: true
     }
   },
   bankTransferIntent: {

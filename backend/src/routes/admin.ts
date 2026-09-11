@@ -42,6 +42,7 @@ import {
   type DonationWithCheckout
 } from '../lib/adminDonationSerialize.js';
 import { reverseEasypayIntent } from '../lib/reverseEasypayIntent.js';
+import { reverseDonationOnLedger } from '../lib/processDonationLedger.js';
 import { HttpError } from '../lib/HttpError.js';
 import { boundedMoneySchema } from '../lib/money.js';
 import { markOrganizerKycVerifiedOnCampaignApprove } from '../lib/userKyc.js';
@@ -2368,13 +2369,29 @@ adminRouter.post(
       actorId: req.userId ?? null
     });
 
-    if (result.alreadyReversed) {
-      res.status(409).json({ message: 'This donation is already reversed.' });
-      return;
-    }
-    if (!result.reversed) {
-      res.status(500).json({ message: 'Could not reverse this donation.' });
-      return;
+    // If the intent was already marked reversed but this donation row never got
+    // `reversedAt` (status still Completed while campaign totals already dropped),
+    // stamp/heal the donation without double-decrementing.
+    if (result.alreadyReversed || !result.reversed) {
+      const healed = await prisma.$transaction(async (tx) =>
+        reverseDonationOnLedger(
+          tx,
+          {
+            id: donation.id,
+            campaignId: donation.campaignId,
+            amount: donation.amount
+          },
+          { reason }
+        )
+      );
+      if (healed === 'already_reversed' && result.alreadyReversed) {
+        res.status(409).json({ message: 'This donation is already reversed.' });
+        return;
+      }
+      if (healed === 'already_reversed' && !result.reversed) {
+        res.status(500).json({ message: 'Could not reverse this donation.' });
+        return;
+      }
     }
 
     const updated = await prisma.donation.findUnique({
@@ -2383,6 +2400,10 @@ adminRouter.post(
     });
     if (!updated) {
       res.status(500).json({ message: 'Donation reversed but could not reload the record.' });
+      return;
+    }
+    if (!updated.reversedAt) {
+      res.status(500).json({ message: 'Could not update transaction status to reversed.' });
       return;
     }
 
