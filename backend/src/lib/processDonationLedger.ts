@@ -1,7 +1,7 @@
 import type { Currency, Prisma } from '@prisma/client';
 import { donationPlatformFeeFromGross } from '../config/fees.js';
 
-async function ensurePlatformStatRow(tx: Prisma.TransactionClient): Promise<void> {
+export async function ensurePlatformStatRow(tx: Prisma.TransactionClient): Promise<void> {
   await tx.platformStat.upsert({
     where: { id: 'platform' },
     create: {
@@ -115,54 +115,32 @@ export async function markDonationReversed(
   params: { reason?: string | null; now?: Date }
 ): Promise<'reversed' | 'already_reversed'> {
   const now = params.now ?? new Date();
+  const reason = params.reason?.trim();
   const claimed = await tx.donation.updateMany({
     where: { id: donationId, reversedAt: null },
     data: {
       reversedAt: now,
-      reversalReason: params.reason ?? undefined
+      ...(reason ? { reversalReason: reason } : {})
     }
   });
   return claimed.count === 1 ? 'reversed' : 'already_reversed';
 }
 
 /**
- * True when campaign raised already excludes this donation (ledger already unwound).
- * Used to repair rows where totals dropped but `reversedAt` was never stamped.
- */
-export async function campaignRaisedAlreadyExcludesDonation(
-  tx: Prisma.TransactionClient,
-  donation: { id: string; campaignId: string; amount: number }
-): Promise<boolean> {
-  const [campaign, others] = await Promise.all([
-    tx.campaign.findUnique({
-      where: { id: donation.campaignId },
-      select: { raisedAmount: true }
-    }),
-    tx.donation.aggregate({
-      where: {
-        campaignId: donation.campaignId,
-        reversedAt: null,
-        id: { not: donation.id }
-      },
-      _sum: { amount: true }
-    })
-  ]);
-  if (!campaign) {
-    return false;
-  }
-  const expectedWithout = others._sum.amount ?? 0;
-  return Math.abs(campaign.raisedAmount - expectedWithout) < 0.02;
-}
-
-/**
  * Marks a donation reversed and unwinds campaign + platform raised totals.
  * Idempotent: a second call for the same row is a no-op.
- * If totals were already unwound but the row was never stamped, only stamps status.
+ *
+ * Set `statusOnlyIfUnwound` only for admin repair when campaign totals were already
+ * reduced but the donation row still shows Completed.
  */
 export async function reverseDonationOnLedger(
   tx: Prisma.TransactionClient,
   donation: { id: string; campaignId: string; amount: number },
-  params: { reason?: string | null; now?: Date }
+  params: {
+    reason?: string | null;
+    now?: Date;
+    statusOnlyIfUnwound?: boolean;
+  }
 ): Promise<'reversed' | 'already_reversed' | 'status_only'> {
   const now = params.now ?? new Date();
 
@@ -170,16 +148,30 @@ export async function reverseDonationOnLedger(
     where: { id: donation.id },
     select: { reversedAt: true }
   });
-  if (!existing) {
-    return 'already_reversed';
-  }
-  if (existing.reversedAt != null) {
+  if (!existing || existing.reversedAt != null) {
     return 'already_reversed';
   }
 
-  if (await campaignRaisedAlreadyExcludesDonation(tx, donation)) {
-    const stamped = await markDonationReversed(tx, donation.id, params);
-    return stamped === 'reversed' ? 'status_only' : 'already_reversed';
+  if (params.statusOnlyIfUnwound) {
+    const [campaign, others] = await Promise.all([
+      tx.campaign.findUnique({
+        where: { id: donation.campaignId },
+        select: { raisedAmount: true }
+      }),
+      tx.donation.aggregate({
+        where: {
+          campaignId: donation.campaignId,
+          reversedAt: null,
+          id: { not: donation.id }
+        },
+        _sum: { amount: true }
+      })
+    ]);
+    const expectedWithout = others._sum.amount ?? 0;
+    if (campaign && Math.abs(campaign.raisedAmount - expectedWithout) < 0.02) {
+      const stamped = await markDonationReversed(tx, donation.id, params);
+      return stamped === 'reversed' ? 'status_only' : 'already_reversed';
+    }
   }
 
   const claimed = await markDonationReversed(tx, donation.id, { reason: params.reason, now });

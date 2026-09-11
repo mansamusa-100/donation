@@ -6,7 +6,8 @@ import { env } from '../config/env.js';
 import { prisma } from '../lib/prisma.js';
 import {
   mergeEasypayPartnerWebhookPayload,
-  applyEasypaySnakeCaseAliases
+  applyEasypaySnakeCaseAliases,
+  extractEasypayPaymentMetadata
 } from '../lib/easypayPartnerPayload.js';
 import { finalizeEasypayIntentPaid, EasypayAmountMismatchError } from '../lib/finalizeEasypayIntent.js';
 import { reverseEasypayIntent } from '../lib/reverseEasypayIntent.js';
@@ -25,14 +26,18 @@ function verifyEasypayPartnerWebhook(
   }
 }
 
-const webhookBodySchema = z.object({
-  event: z.string(),
-  paymentId: z.string().optional(),
-  partnerExternalBookingId: z.string().optional(),
-  amount: z.union([z.number(), z.string()]).optional(),
-  paymentStatus: z.string().optional(),
-  reason: z.string().optional()
-});
+const webhookBodySchema = z
+  .object({
+    event: z.string().optional(),
+    type: z.string().optional(),
+    paymentId: z.string().optional(),
+    partnerExternalBookingId: z.string().optional(),
+    amount: z.union([z.number(), z.string()]).optional(),
+    paymentStatus: z.string().optional(),
+    status: z.string().optional(),
+    reason: z.string().optional()
+  })
+  .passthrough();
 
 function normalizePartnerEvent(event: string): string {
   return event.trim().toLowerCase().replace(/[\s._-]+/g, '.');
@@ -56,6 +61,8 @@ const REVERSAL_EVENT_TOKENS = new Set([
   'payment.chargeback',
   'order.reversed',
   'order.refunded',
+  'transaction.reversed',
+  'transaction.refunded',
   'reversed',
   'reversal',
   'refunded',
@@ -63,15 +70,57 @@ const REVERSAL_EVENT_TOKENS = new Set([
   'chargeback'
 ]);
 
-function isPaymentReversedEvent(event: string, paymentStatus?: string): boolean {
-  const tokens = [event, paymentStatus ?? ''].map(normalizePartnerEvent).filter(Boolean);
+function isPaymentReversedEvent(...candidates: Array<string | undefined>): boolean {
+  const tokens = candidates.map((c) => (c ? normalizePartnerEvent(c) : '')).filter(Boolean);
   return tokens.some(
     (t) =>
       REVERSAL_EVENT_TOKENS.has(t) ||
-      t.endsWith('.reversed') ||
-      t.endsWith('.refunded') ||
-      t.endsWith('.chargeback')
+      t.includes('revers') ||
+      t.includes('refund') ||
+      t.includes('chargeback')
   );
+}
+
+async function resolvePartnerExternalBookingId(params: {
+  partnerExternalBookingId?: string;
+  paymentId?: string;
+  merged: Record<string, unknown>;
+}): Promise<string | null> {
+  const meta = extractEasypayPaymentMetadata(params.merged);
+  const direct =
+    params.partnerExternalBookingId?.trim() ||
+    meta.partnerExternalBookingId?.trim() ||
+    (typeof params.merged.bookingId === 'string' ? params.merged.bookingId.trim() : '') ||
+    (typeof params.merged.booking_id === 'string' ? params.merged.booking_id.trim() : '') ||
+    (typeof params.merged.externalBookingId === 'string'
+      ? params.merged.externalBookingId.trim()
+      : '') ||
+    (typeof params.merged.external_booking_id === 'string'
+      ? params.merged.external_booking_id.trim()
+      : '');
+
+  if (direct) {
+    return direct;
+  }
+
+  const paymentId = params.paymentId?.trim() || meta.paymentId?.trim();
+  if (!paymentId) {
+    return null;
+  }
+
+  // Fall back: find the intent that recorded this payment id.
+  const byPayment = await prisma.easypayPaymentIntent.findFirst({
+    where: {
+      OR: [
+        { lastPaymentId: paymentId },
+        { easypayOrderId: paymentId },
+        { orderPublicCode: paymentId },
+        { partnerExternalBookingId: paymentId }
+      ]
+    },
+    select: { partnerExternalBookingId: true }
+  });
+  return byPayment?.partnerExternalBookingId ?? null;
 }
 
 /**
@@ -109,16 +158,36 @@ export async function handleEasypayPartnerWebhook(req: Request, res: Response): 
     return;
   }
 
-  const { event, paymentId, partnerExternalBookingId, amount, paymentStatus, reason } = body.data;
+  const event = (body.data.event ?? body.data.type ?? '').trim();
+  const paymentStatus = body.data.paymentStatus ?? body.data.status;
+  const paymentId = body.data.paymentId;
+  const amount = body.data.amount;
+  const reason = body.data.reason;
+
+  if (!event) {
+    console.warn('[easypay webhook] missing event/type', {
+      keys: Object.keys(merged).slice(0, 30)
+    });
+    res.status(400).json({ message: 'Missing event' });
+    return;
+  }
 
   if (isPaymentReversedEvent(event, paymentStatus)) {
+    const partnerExternalBookingId = await resolvePartnerExternalBookingId({
+      partnerExternalBookingId: body.data.partnerExternalBookingId,
+      paymentId,
+      merged
+    });
+
     if (!partnerExternalBookingId) {
       console.warn('[easypay webhook] reversal missing partnerExternalBookingId', {
         event,
         paymentId,
-        paymentStatus
+        paymentStatus,
+        keys: Object.keys(merged).slice(0, 40)
       });
-      res.status(400).json({ message: 'Missing partnerExternalBookingId' });
+      // ACK so DPay does not retry forever; ops can reverse manually from admin.
+      res.status(200).json({ ok: false, missingBookingId: true, event });
       return;
     }
 
@@ -127,8 +196,17 @@ export async function handleEasypayPartnerWebhook(req: Request, res: Response): 
         partnerExternalBookingId,
         reason: reason ?? paymentStatus ?? event
       });
+      console.info('[easypay webhook] reversal handled', {
+        partnerExternalBookingId,
+        paymentId,
+        event,
+        ...result
+      });
       if (result.unknownBooking) {
-        console.warn('[easypay webhook] reversal for unknown partnerExternalBookingId', partnerExternalBookingId);
+        console.warn(
+          '[easypay webhook] reversal for unknown partnerExternalBookingId',
+          partnerExternalBookingId
+        );
       }
     } catch (err) {
       console.error('[easypay webhook] reverse failed', {
@@ -156,15 +234,21 @@ export async function handleEasypayPartnerWebhook(req: Request, res: Response): 
   }
 
   if (!isPaymentCompletedEvent(event)) {
+    console.info('[easypay webhook] ignored event', { event, paymentStatus });
     // Still ACK cancelled/failed so DPay stops retrying.
     res.status(200).json({ ok: true, ignored: true, event });
     return;
   }
 
-  if (!paymentId || !partnerExternalBookingId) {
+  const meta = extractEasypayPaymentMetadata(merged);
+  const partnerExternalBookingId =
+    body.data.partnerExternalBookingId?.trim() || meta.partnerExternalBookingId?.trim() || '';
+  const completedPaymentId = paymentId?.trim() || meta.paymentId?.trim() || '';
+
+  if (!completedPaymentId || !partnerExternalBookingId) {
     console.warn('[easypay webhook] completed event missing ids', {
       event,
-      paymentId,
+      paymentId: completedPaymentId,
       partnerExternalBookingId,
       paymentStatus
     });
@@ -189,14 +273,14 @@ export async function handleEasypayPartnerWebhook(req: Request, res: Response): 
   try {
     await finalizeEasypayIntentPaid({
       intent,
-      webhookPaymentId: paymentId,
-      grossAmountFromWebhook: amount
+      webhookPaymentId: completedPaymentId,
+      grossAmountFromWebhook: amount ?? meta.amount
     });
   } catch (err) {
     if (err instanceof EasypayAmountMismatchError) {
       console.error('[easypay webhook] amount mismatch — not recording donation', {
         partnerExternalBookingId,
-        paymentId,
+        paymentId: completedPaymentId,
         expectedGrossCents: err.expectedGrossCents,
         gotCents: err.gotCents
       });
@@ -206,7 +290,7 @@ export async function handleEasypayPartnerWebhook(req: Request, res: Response): 
     }
     console.error('[easypay webhook] finalize failed', {
       partnerExternalBookingId,
-      paymentId,
+      paymentId: completedPaymentId,
       err
     });
     // Non-2xx so DPay retries.
@@ -216,7 +300,7 @@ export async function handleEasypayPartnerWebhook(req: Request, res: Response): 
 
   try {
     await prisma.easypayWebhookReceipt.create({
-      data: { paymentId, event: 'payment.completed' }
+      data: { paymentId: completedPaymentId, event: 'payment.completed' }
     });
   } catch (e) {
     if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) {

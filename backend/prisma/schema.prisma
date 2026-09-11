@@ -213,6 +213,8 @@ model EasypayPaymentIntent {
   isAnonymous              Boolean   @default(false)
   avatarUrl                String?
   lastGatewayCode          String?
+  /// Last DPay payment id from a completed webhook/APS finalize (helps reverse lookups).
+  lastPaymentId            String?
   donationId               String?   @unique
   /// Set when DPay reports this payment was reversed/refunded.
   reversedAt               DateTime?
@@ -225,6 +227,7 @@ model EasypayPaymentIntent {
 
   @@index([campaignId])
   @@index([easypayOrderId])
+  @@index([lastPaymentId])
 }
 
 model EasypayWebhookReceipt {

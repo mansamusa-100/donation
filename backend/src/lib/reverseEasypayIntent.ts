@@ -1,5 +1,8 @@
 import { prisma } from './prisma.js';
-import { reverseDonationOnLedger } from './processDonationLedger.js';
+import {
+  ensurePlatformStatRow,
+  reverseDonationOnLedger
+} from './processDonationLedger.js';
 import { lockEasypayPaymentIntentForUpdate } from './paymentIntentLock.js';
 import { recordActivity } from './activityLog.js';
 
@@ -41,29 +44,31 @@ export async function reverseEasypayIntent(params: {
       return 'missing' as const;
     }
 
-    const donationAlreadyReversed = !locked.donation || locked.donation.reversedAt != null;
-    const tipAlreadyReversed = !locked.platformTip || locked.platformTip.reversedAt != null;
-    if (locked.reversedAt && donationAlreadyReversed && tipAlreadyReversed) {
+    // Prefer the linked donation; if include is empty but donationId is set, load it.
+    let donation = locked.donation;
+    if (!donation && locked.donationId) {
+      donation = await tx.donation.findUnique({ where: { id: locked.donationId } });
+    }
+
+    const donationDone = !donation || donation.reversedAt != null;
+    const tipDone = !locked.platformTip || locked.platformTip.reversedAt != null;
+    if (locked.reversedAt && donationDone && tipDone) {
       return 'already' as const;
     }
 
-    if (!locked.reversedAt) {
-      await tx.easypayPaymentIntent.update({
-        where: { id: locked.id },
-        data: { reversedAt: now }
-      });
+    // Reverse the donation ledger first (campaign + transaction status).
+    if (donation && donation.reversedAt == null) {
+      await reverseDonationOnLedger(tx, donation, { reason, now });
     }
 
-    if (locked.donation && locked.donation.reversedAt == null) {
-      await reverseDonationOnLedger(tx, locked.donation, { reason, now });
-    }
-
+    // Then tip (never fail the whole reversal if tip stats are missing).
     if (locked.platformTip && locked.platformTip.reversedAt == null) {
       const claimedTip = await tx.platformTip.updateMany({
         where: { id: locked.platformTip.id, reversedAt: null },
         data: { reversedAt: now }
       });
       if (claimedTip.count === 1) {
+        await ensurePlatformStatRow(tx);
         await tx.platformStat.update({
           where: { id: 'platform' },
           data: {
@@ -76,6 +81,13 @@ export async function reverseEasypayIntent(params: {
           WHERE id = 'platform' AND "totalPlatformTips" < 0
         `;
       }
+    }
+
+    if (!locked.reversedAt) {
+      await tx.easypayPaymentIntent.update({
+        where: { id: locked.id },
+        data: { reversedAt: now }
+      });
     }
 
     return 'reversed' as const;

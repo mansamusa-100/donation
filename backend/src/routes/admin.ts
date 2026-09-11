@@ -2381,7 +2381,7 @@ adminRouter.post(
             campaignId: donation.campaignId,
             amount: donation.amount
           },
-          { reason }
+          { reason, statusOnlyIfUnwound: true }
         )
       );
       if (healed === 'already_reversed' && result.alreadyReversed) {

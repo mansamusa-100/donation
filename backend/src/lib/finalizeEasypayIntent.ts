@@ -136,7 +136,10 @@ export async function finalizeEasypayIntentPaid(params: {
 
     const claimed = await tx.easypayPaymentIntent.updateMany({
       where: { id: intent.id, donationId: null, reversedAt: null },
-      data: { donationId: donation.id }
+      data: {
+        donationId: donation.id,
+        lastPaymentId: webhookPaymentId
+      }
     });
     if (claimed.count !== 1) {
       throw new Error('Failed to claim Easypay payment intent (concurrent finalize)');
