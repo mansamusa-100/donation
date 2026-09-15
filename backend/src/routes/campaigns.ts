@@ -21,6 +21,7 @@ import {
 import { MAX_PLATFORM_TIP_PER_CHECKOUT } from '../config/platformTip.js';
 import { boundedMoneySchema } from '../lib/money.js';
 import { applyDonationToLedger, recordPlatformTip } from '../lib/processDonationLedger.js';
+import { notifyOrganizerOfDonation } from '../lib/webPush.js';
 import { HttpError } from '../lib/HttpError.js';
 import { env } from '../config/env.js';
 import {
@@ -1281,6 +1282,16 @@ campaignsRouter.post(
         });
       }
     }
+
+    notifyOrganizerOfDonation({
+      campaignId: campaign.id,
+      campaignTitle: campaign.title,
+      campaignSlug: campaign.slug,
+      amount: body.amount,
+      currency: body.currency,
+      donorName: donorDisplayName,
+      isAnonymous: body.isAnonymous
+    });
 
     const updatedCampaign = await prisma.campaign.findUnique({
       where: { id: campaign.id },

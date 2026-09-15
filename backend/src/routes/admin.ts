@@ -1654,7 +1654,7 @@ adminRouter.get(
       fees: {
         /** Sum of 1.9% donation fees (completed donations; reversed gifts excluded). */
         totalDonationPlatformFees: donationFeeSum._sum.platformFeeAmount ?? 0,
-        /** Sum of 3% withdrawal processing fees for payouts marked Paid. */
+        /** Sum of 1.5% withdrawal processing fees for payouts marked Paid. */
         totalWithdrawalProcessingFees: withdrawalFeePaidSum._sum.processingFeeAmount ?? 0
       }
     });

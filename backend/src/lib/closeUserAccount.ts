@@ -238,6 +238,7 @@ export async function closeUserAccount(
     const count = await endOrganizerCampaigns(tx, userId);
 
     await tx.userPayoutMethod.deleteMany({ where: { userId } });
+    await tx.pushSubscription.deleteMany({ where: { userId } });
 
     await tx.user.update({
       where: { id: userId },

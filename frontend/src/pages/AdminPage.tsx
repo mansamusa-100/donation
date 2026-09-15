@@ -1318,7 +1318,7 @@ export function AdminPage() {
                   </div>
                   <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                     <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                      Withdrawal fees (3%, paid out)
+                      Withdrawal fees (1.5%, paid out)
                     </p>
                     <p className="text-2xl font-display font-bold text-slate-900 mt-1">
                       {formatGmd(stats.fees.totalWithdrawalProcessingFees)}
@@ -1698,7 +1698,7 @@ export function AdminPage() {
                       <th className="px-4 py-3">Campaign</th>
                       <th className="px-4 py-3">Organizer</th>
                       <th className="px-4 py-3">Requested</th>
-                      <th className="px-4 py-3">Fee (3%)</th>
+                      <th className="px-4 py-3">Fee (1.5%)</th>
                       <th className="px-4 py-3">Net</th>
                       <th className="px-4 py-3">Payout</th>
                       <th className="px-4 py-3">Status</th>

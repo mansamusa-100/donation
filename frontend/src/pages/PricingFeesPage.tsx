@@ -24,7 +24,7 @@ export function PricingFeesPage() {
         <h2 className="font-display text-xl font-bold text-surface-900">Withdrawals</h2>
         <p>
           When you request a payout from an eligible campaign balance, a{' '}
-          <strong className="text-surface-900">3%</strong> processing fee applies to the requested withdrawal amount.
+          <strong className="text-surface-900">1.5%</strong> processing fee applies to the requested withdrawal amount.
           The net amount is what is intended for disbursement after that fee.
         </p>
         <p className="text-sm text-surface-600">

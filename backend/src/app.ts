@@ -25,6 +25,7 @@ import { paymentsRouter } from './routes/payments.js';
 import { payoutMethodsRouter } from './routes/payoutMethods.js';
 import { platformBankAccountsRouter } from './routes/platformBankAccounts.js';
 import { bankTransfersRouter } from './routes/bankTransfers.js';
+import { pushRouter } from './routes/push.js';
 import { asyncHandler } from './lib/asyncHandler.js';
 import { handleWaveWebhook } from './routes/waveWebhook.js';
 import { handleEasypayPartnerWebhook } from './routes/easypayWebhook.js';
@@ -82,6 +83,7 @@ app.use('/api/uploads', uploadsRouter);
 app.use('/api/payout-methods', payoutMethodsRouter);
 app.use('/api/platform-bank-accounts', platformBankAccountsRouter);
 app.use('/api/bank-transfers', bankTransfersRouter);
+app.use('/api/push', pushRouter);
 
 /**
  * Campaign share previews: inject standard Open Graph + Twitter Card tags into the HTML

@@ -907,9 +907,9 @@ export function CreateCampaignPage() {
                   </li>
                   <li>
                     <strong className="text-surface-900">Payout / withdrawal:</strong> When your campaign
-                    ends or if you request a withdrawal, a <strong>3%</strong> processing fee may apply to
-                    the relevant payout. Details will be confirmed in your organizer dashboard and payout
-                    flows.
+                    ends or if you request a withdrawal, a <strong>1.5%</strong> processing fee applies to
+                    the requested payout amount. Your dashboard shows the fee and the net you receive
+                    before you submit.
                   </li>
                   <li>
                     We may hold or delay payouts if verification or compliance checks are required.

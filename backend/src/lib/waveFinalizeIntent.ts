@@ -7,6 +7,7 @@ import { tryFinalizeCampaignEnded } from './campaignLifecycle.js';
 import { sendDonationThankYouEmail } from './mail.js';
 import { lockWavePaymentIntentForUpdate } from './paymentIntentLock.js';
 import { recentActiveDonationsInclude } from './donationActive.js';
+import { notifyOrganizerOfDonation } from './webPush.js';
 
 export type WaveCheckoutSnapshot = {
   amount: string;
@@ -167,6 +168,16 @@ export async function finalizeWaveIntentFromCheckoutSession(
       }
     })().catch((err) => console.error('[mail] donation thank you (wave)', err));
   }
+
+  notifyOrganizerOfDonation({
+    campaignId: intent.campaignId,
+    campaignTitle: intent.campaign.title,
+    campaignSlug: intent.campaign.slug,
+    amount: intent.amount,
+    currency: intent.currency,
+    donorName: intent.donorName,
+    isAnonymous: intent.isAnonymous
+  });
 
   return {
     kind: 'succeeded',

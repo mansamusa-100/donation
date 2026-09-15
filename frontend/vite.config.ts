@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['log.svg', 'log.png', 'pwa-192.png', 'pwa-512.png', 'apple-touch-icon.png'],
+      includeAssets: ['log.svg', 'log.png', 'pwa-192.png', 'pwa-512.png', 'apple-touch-icon.png', 'push-sw.js'],
       manifest: {
         name: 'Barakah Fund',
         short_name: 'BarakahFund',
@@ -42,6 +42,7 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2}'],
         navigateFallback: 'index.html',
+        importScripts: ['push-sw.js'],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -60,6 +61,9 @@ export default defineConfig({
             }
           }
         ]
+      },
+      devOptions: {
+        enabled: true
       }
     })
   ],

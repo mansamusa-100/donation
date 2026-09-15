@@ -4,6 +4,7 @@ import { applyDonationToLedger, recordPlatformTip } from './processDonationLedge
 import { tryFinalizeCampaignEnded } from './campaignLifecycle.js';
 import { sendBankTransferConfirmedEmail } from './mail.js';
 import { lockBankTransferIntentForUpdate } from './paymentIntentLock.js';
+import { notifyOrganizerOfDonation } from './webPush.js';
 
 type IntentWithRelations = BankTransferIntent & {
   campaign: { title: string; slug: string };
@@ -99,6 +100,17 @@ export async function confirmBankTransferIntent(params: {
     await tryFinalizeCampaignEnded(tx, current.campaignId);
 
     return { updated, donation };
+  }).then((result) => {
+    notifyOrganizerOfDonation({
+      campaignId: result.updated.campaignId,
+      campaignTitle: result.updated.campaign.title,
+      campaignSlug: result.updated.campaign.slug,
+      amount: result.donation.amount,
+      currency: result.updated.currency,
+      donorName: result.updated.donorName,
+      isAnonymous: result.updated.isAnonymous
+    });
+    return result;
   });
 }
 

@@ -17,8 +17,14 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { toUserFriendlyError } from '../lib/userFriendlyError';
 import { mediaUrl } from '../lib/mediaUrl';
+import {
+  WITHDRAWAL_PROCESSING_FEE_PERCENT,
+  withdrawalNetToOrganizer,
+  withdrawalProcessingFeeFromGross
+} from '../lib/fees';
 import { DataLoadAlert } from '../components/DataLoadAlert';
 import { PayoutMethodsPanel } from '../components/PayoutMethodsPanel';
+import { PushNotificationsPanel } from '../components/PushNotificationsPanel';
 import { ProfileAvatarEditor } from '../components/ProfileAvatarEditor';
 import { CloseAccountPanel } from '../components/CloseAccountPanel';
 import type { UserPayoutMethod } from '../types/payout';
@@ -360,7 +366,8 @@ export function DashboardPage() {
               </div>
             </div>
 
-            <div className="mb-8">
+            <div className="mb-8 space-y-6">
+              <PushNotificationsPanel />
               <PayoutMethodsPanel onUpdated={() => void refreshPayoutMethods()} />
             </div>
 
@@ -380,9 +387,10 @@ export function DashboardPage() {
                     <div>
                       <h2 className="text-lg font-display font-bold text-surface-900">Withdrawals</h2>
                       <p className="text-sm text-surface-500 mt-1">
-                        Request a payout for funds raised on your campaigns. Pending, approved, and completed
-                        requests reduce your available balance. Platform processing fees apply as described in
-                        your campaign terms.
+                        Request a payout from funds raised on your campaigns. Each request shows the
+                        amount you asked for, the {WITHDRAWAL_PROCESSING_FEE_PERCENT}% processing fee,
+                        and the net you should receive. Pending, approved, and completed requests reduce
+                        your available balance.
                       </p>
                     </div>
                   </div>
@@ -392,15 +400,33 @@ export function DashboardPage() {
                   ) : (
                     <ul className="divide-y divide-surface-100 border border-surface-100 rounded-xl overflow-hidden">
                       {withdrawals.map((w: CreatorWithdrawalRequest) => (
-                        <li key={w.id} className="px-4 py-3 flex flex-wrap items-center justify-between gap-2 bg-surface-50/50">
-                          <div>
-                            <p className="font-semibold text-surface-900 text-sm">
-                              D{w.amount.toLocaleString()} requested · est. D{w.netAmount.toLocaleString()} to you
-                              <span className="text-surface-500 font-normal">
-                                {' '}
-                                (3% fee D{w.processingFeeAmount.toLocaleString()}) · {w.campaignTitle}
-                              </span>
-                            </p>
+                        <li
+                          key={w.id}
+                          className="px-4 py-3 flex flex-wrap items-start justify-between gap-3 bg-surface-50/50">
+                          <div className="min-w-0 flex-1 space-y-1.5">
+                            <p className="font-semibold text-surface-900 text-sm">{w.campaignTitle}</p>
+                            <dl className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs text-surface-600">
+                              <div>
+                                <dt className="text-surface-500">Requested</dt>
+                                <dd className="font-semibold text-surface-800">
+                                  D{w.amount.toLocaleString()}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-surface-500">
+                                  Processing fee ({WITHDRAWAL_PROCESSING_FEE_PERCENT}%)
+                                </dt>
+                                <dd className="font-semibold text-surface-800">
+                                  D{w.processingFeeAmount.toLocaleString()}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-surface-500">You receive</dt>
+                                <dd className="font-bold text-emerald-800">
+                                  D{w.netAmount.toLocaleString()}
+                                </dd>
+                              </div>
+                            </dl>
                             <p className="text-xs text-surface-500">
                               {new Date(w.createdAt).toLocaleString()} ·{' '}
                               <Link
@@ -410,19 +436,19 @@ export function DashboardPage() {
                               </Link>
                             </p>
                             {w.payoutSummary && (
-                              <p className="text-xs text-surface-600 mt-1">Payout: {w.payoutSummary}</p>
+                              <p className="text-xs text-surface-600">Payout: {w.payoutSummary}</p>
                             )}
                             {w.payoutReference && (
-                              <p className="text-xs text-emerald-800 mt-0.5">
+                              <p className="text-xs text-emerald-800">
                                 Paid — ref: {w.payoutReference}
                               </p>
                             )}
                             {w.note && (
-                              <p className="text-xs text-surface-600 mt-1 italic">&quot;{w.note}&quot;</p>
+                              <p className="text-xs text-surface-600 italic">&quot;{w.note}&quot;</p>
                             )}
                           </div>
                           <span
-                            className={`text-xs font-bold px-2.5 py-1 rounded-md ${withdrawalStatusClass(w.status)}`}>
+                            className={`text-xs font-bold px-2.5 py-1 rounded-md shrink-0 ${withdrawalStatusClass(w.status)}`}>
                             {w.status}
                           </span>
                         </li>
@@ -679,6 +705,15 @@ function CampaignRow({
   const canConfirmEnd = campaign.canConfirmEnd === true;
   const pendingExtension = campaign.pendingExtension;
   const canEditContact = status !== 'Closed' && status !== 'Rejected';
+  const withdrawPreviewAmount = Math.round(Number(wAmount) * 100) / 100;
+  const withdrawPreviewValid =
+    Number.isFinite(withdrawPreviewAmount) && withdrawPreviewAmount >= 1;
+  const withdrawPreviewFee = withdrawPreviewValid
+    ? withdrawalProcessingFeeFromGross(withdrawPreviewAmount)
+    : 0;
+  const withdrawPreviewNet = withdrawPreviewValid
+    ? withdrawalNetToOrganizer(withdrawPreviewAmount)
+    : 0;
 
   useEffect(() => {
     if (!payoutMethodId && defaultMethodId) {
@@ -1034,6 +1069,28 @@ function CampaignRow({
               {busy ? 'Sending…' : 'Submit request'}
             </button>
           </div>
+          {withdrawPreviewValid ? (
+            <div className="rounded-xl border border-surface-200 bg-surface-50 px-3 py-2.5 text-xs text-surface-700 space-y-1 max-w-md">
+              <p className="font-semibold text-surface-800">Payout breakdown</p>
+              <div className="flex justify-between gap-4">
+                <span>Requested</span>
+                <span className="font-medium">D{withdrawPreviewAmount.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span>Processing fee ({WITHDRAWAL_PROCESSING_FEE_PERCENT}%)</span>
+                <span className="font-medium">D{withdrawPreviewFee.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between gap-4 border-t border-surface-200 pt-1 text-sm font-bold text-emerald-800">
+                <span>You receive</span>
+                <span>D{withdrawPreviewNet.toLocaleString()}</span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-surface-500">
+              Enter an amount to see the {WITHDRAWAL_PROCESSING_FEE_PERCENT}% processing fee and what you
+              receive.
+            </p>
+          )}
         </form>
       )}
     </div>

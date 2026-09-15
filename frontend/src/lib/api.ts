@@ -303,6 +303,32 @@ export const api = {
     });
   },
 
+  getVapidPublicKey() {
+    return request<{ publicKey: string }>('/api/push/vapid-public-key');
+  },
+
+  getPushStatus() {
+    return request<{ configured: boolean; deviceCount: number }>('/api/push/status');
+  },
+
+  subscribePush(payload: {
+    endpoint: string;
+    keys: { p256dh: string; auth: string };
+    userAgent?: string;
+  }) {
+    return request<{ id: string; endpoint: string; createdAt: string }>('/api/push/subscribe', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  unsubscribePush(endpoint: string) {
+    return request<{ message: string }>('/api/push/subscribe', {
+      method: 'DELETE',
+      body: JSON.stringify({ endpoint })
+    });
+  },
+
   createWithdrawalRequest(payload: {
     campaignSlug: string;
     amount: number;

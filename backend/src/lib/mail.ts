@@ -143,7 +143,7 @@ function withdrawalAmountDetails(params: {
 }): EmailDetail[] {
   return [
     { label: 'Requested', value: formatGmd(params.requestedAmount) },
-    { label: 'Processing fee (3%)', value: formatGmd(params.processingFeeAmount) },
+    { label: 'Processing fee (1.5%)', value: formatGmd(params.processingFeeAmount) },
     { label: 'Net payout', value: formatGmd(params.netAmount) }
   ];
 }

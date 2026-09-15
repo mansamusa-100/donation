@@ -10,6 +10,7 @@ import { partnerCreateOrderErrorIndicatesAlreadyPaid } from './easypayPartnerPay
 import { roundMoney } from './money.js';
 import { lockEasypayPaymentIntentForUpdate } from './paymentIntentLock.js';
 import { recentActiveDonationsInclude } from './donationActive.js';
+import { notifyOrganizerOfDonation } from './webPush.js';
 
 /** Parse a reported GMD total in bututs/cents so decimal amounts compare exactly. */
 export function parseGmdTotalCents(value: unknown): number | null {
@@ -198,6 +199,16 @@ export async function finalizeEasypayIntentPaid(params: {
       }
     })().catch((err) => console.error('[mail] donation thank you (easypay)', err));
   }
+
+  notifyOrganizerOfDonation({
+    campaignId: intent.campaignId,
+    campaignTitle: intent.campaign.title,
+    campaignSlug: intent.campaign.slug,
+    amount: intent.amount,
+    currency: intent.currency,
+    donorName: intent.donorName,
+    isAnonymous: intent.isAnonymous
+  });
 
   return { recorded: true };
 }

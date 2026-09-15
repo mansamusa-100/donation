@@ -87,7 +87,15 @@ const envSchema = z.object({
   /** Alert inbox (comma-separated). Falls back to OWNER_EMAIL when empty. */
   SECURITY_ALERT_TO: z.string().default(''),
   /** Optional Discord/Slack-compatible webhook URL for security alerts. */
-  SECURITY_ALERT_WEBHOOK_URL: z.string().default('')
+  SECURITY_ALERT_WEBHOOK_URL: z.string().default(''),
+  /**
+   * Web Push (VAPID). Generate with: npx web-push generate-vapid-keys
+   * Leave empty to disable organizer donation push notifications.
+   */
+  VAPID_PUBLIC_KEY: z.string().default(''),
+  VAPID_PRIVATE_KEY: z.string().default(''),
+  /** Contact URI for VAPID (mailto: or https:). Used by push services. */
+  VAPID_SUBJECT: z.string().default('mailto:support@barakahfund.com')
 });
 
 const INSECURE_JWT_SECRETS = new Set([
