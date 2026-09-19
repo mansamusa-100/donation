@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { prisma } from './prisma.js';
 import { env } from '../config/env.js';
+import { SHARE_CARD_HEIGHT, SHARE_CARD_WIDTH } from './campaignShareCard.js';
 
 const BRAND_NAME = 'BarakahFund';
 const DEFAULT_DESCRIPTION =
@@ -24,21 +25,6 @@ function escapeAttr(value: string): string {
   return escapeHtml(value);
 }
 
-function absolutizeMediaUrl(pathOrUrl: string | null | undefined, origin: string): string {
-  const fallback = `${origin}/log.png`;
-  if (!pathOrUrl?.trim()) {
-    return fallback;
-  }
-  const value = pathOrUrl.trim();
-  if (value.startsWith('http://') || value.startsWith('https://')) {
-    return value;
-  }
-  if (value.startsWith('/')) {
-    return `${origin}${value}`;
-  }
-  return `${origin}/${value}`;
-}
-
 function truncate(text: string, max: number): string {
   const cleaned = text.replace(/\s+/g, ' ').trim();
   if (cleaned.length <= max) {
@@ -52,6 +38,8 @@ export type CampaignOgPayload = {
   description: string;
   url: string;
   imageUrl: string;
+  imageWidth: number;
+  imageHeight: number;
   siteName: string;
 };
 
@@ -74,6 +62,10 @@ export function buildCampaignOgTags(meta: CampaignOgPayload): string {
     `<meta property="og:description" content="${description}" />`,
     `<meta property="og:url" content="${url}" />`,
     `<meta property="og:image" content="${image}" />`,
+    `<meta property="og:image:secure_url" content="${image}" />`,
+    `<meta property="og:image:type" content="image/png" />`,
+    `<meta property="og:image:width" content="${meta.imageWidth}" />`,
+    `<meta property="og:image:height" content="${meta.imageHeight}" />`,
     `<meta property="og:image:alt" content="${plainTitle}" />`,
     `<meta name="twitter:card" content="summary_large_image" />`,
     `<meta name="twitter:title" content="${plainTitle}" />`,
@@ -101,7 +93,11 @@ export async function loadCampaignOgPayload(slug: string): Promise<CampaignOgPay
       shortDescription: true,
       coverImage: true,
       slug: true,
-      status: true
+      status: true,
+      raisedAmount: true,
+      goalAmount: true,
+      creatorName: true,
+      updatedAt: true
     }
   });
 
@@ -110,11 +106,24 @@ export async function loadCampaignOgPayload(slug: string): Promise<CampaignOgPay
   }
 
   const origin = publicSiteOrigin();
+  const apiOrigin = (env.APP_PUBLIC_BASE_URL.trim() || origin).replace(/\/$/, '');
+  const raised = Math.round(campaign.raisedAmount);
+  const blurb = truncate(campaign.shortDescription || DEFAULT_DESCRIPTION, 140);
+  const description = truncate(
+    `D${raised.toLocaleString('en-US')} raised of D${campaign.goalAmount.toLocaleString('en-US')} · ${blurb}`,
+    200
+  );
+
+  // Cache-bust when totals change so WhatsApp/FB refetch the card.
+  const v = `${raised}-${campaign.updatedAt.getTime()}`;
+
   return {
     title: campaign.title,
-    description: truncate(campaign.shortDescription || DEFAULT_DESCRIPTION, 200),
+    description,
     url: `${origin}/campaign/${campaign.slug}`,
-    imageUrl: absolutizeMediaUrl(campaign.coverImage, origin),
+    imageUrl: `${apiOrigin}/api/campaigns/${encodeURIComponent(campaign.slug)}/share-card.png?v=${v}`,
+    imageWidth: SHARE_CARD_WIDTH,
+    imageHeight: SHARE_CARD_HEIGHT,
     siteName: BRAND_NAME
   };
 }

@@ -4,6 +4,7 @@ import { ShieldCheckIcon, UsersIcon, ClockIcon, HeartIcon, PhoneIcon, MessageCir
 import { ProgressBar } from '../components/ProgressBar';
 import { CategoryBadge } from '../components/CategoryBadge';
 import { ShareButtons } from '../components/ShareButtons';
+import { SharePreviewCard } from '../components/SharePreviewCard';
 import { DonorWall } from '../components/DonorWall';
 import { DonateModal } from '../components/DonateModal';
 import { Avatar } from '../components/Avatar';
@@ -244,8 +245,19 @@ export function CampaignDetailPage() {
             </div>
 
             <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-surface-200">
-              <h3 className="font-display font-bold text-xl mb-4">Help by sharing</h3>
-              <p className="text-surface-600 mb-6">Campaigns shared on social networks raise up to 5x more.</p>
+              <h3 className="font-display font-bold text-xl mb-2">Help by sharing</h3>
+              <p className="text-surface-600 mb-5">
+                Campaigns shared on social networks raise up to 5x more. Here&rsquo;s how your link preview looks:
+              </p>
+              <div className="mb-6">
+                <SharePreviewCard
+                  title={campaign.title}
+                  creatorName={campaign.creatorName}
+                  coverImage={campaign.coverImage}
+                  raisedAmount={campaign.raisedAmount}
+                  goalAmount={campaign.goalAmount}
+                />
+              </div>
               <ShareButtons
                 url={`${window.location.origin}/campaign/${campaign.slug}`}
                 title={campaign.title}

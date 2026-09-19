@@ -44,6 +44,7 @@ import { isValidContactPhone, normalizeContactPhone } from '../lib/contactPhone.
 import { serializePlatformBankAccount } from '../lib/platformBankAccountSerialize.js';
 import { isOwnedVerificationDocumentUrl } from '../lib/processRasterUpload.js';
 import { recordKycDocumentSubmission } from '../lib/userKyc.js';
+import { renderCampaignShareCard } from '../lib/campaignShareCard.js';
 
 const campaignQuerySchema = z.object({
   search: z.string().trim().optional(),
@@ -671,6 +672,48 @@ campaignsRouter.get(
     });
 
     res.json(donations.map(serializeDonation));
+  })
+);
+
+campaignsRouter.get(
+  '/:slug/share-card.png',
+  asyncHandler(async (req, res) => {
+    const slug = String(req.params.slug ?? '').trim();
+    const campaign = await prisma.campaign.findUnique({
+      where: { slug },
+      select: {
+        title: true,
+        creatorName: true,
+        coverImage: true,
+        raisedAmount: true,
+        goalAmount: true,
+        status: true,
+        updatedAt: true
+      }
+    });
+
+    if (!campaign || (campaign.status !== 'Active' && campaign.status !== 'Ended')) {
+      res.status(404).json({ message: 'Campaign not found' });
+      return;
+    }
+
+    try {
+      const png = await renderCampaignShareCard({
+        title: campaign.title,
+        creatorName: campaign.creatorName,
+        coverImage: campaign.coverImage,
+        raisedAmount: campaign.raisedAmount,
+        goalAmount: campaign.goalAmount
+      });
+
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.setHeader('ETag', `"${Math.round(campaign.raisedAmount)}-${campaign.updatedAt.getTime()}"`);
+      res.send(png);
+    } catch (err) {
+      console.error('[share-card] render failed', slug, err);
+      res.status(500).json({ message: 'Could not render share card' });
+    }
   })
 );
 
