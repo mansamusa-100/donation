@@ -22,8 +22,8 @@ interface DonateModalProps {
   campaignSlug?: string;
 }
 
-const PRESET_AMOUNTS = [50, 100, 250, 500, 1000];
-const PRESET_PLATFORM_TIPS = [0, 10, 25, 50];
+const PRESET_AMOUNTS = [1000, 500, 250, 100];
+const PRESET_PLATFORM_TIPS = [0, 50, 100, 200];
 const MAX_PLATFORM_TIP = 100_000;
 
 type WalletId = 'wave' | 'aps' | 'yonna';
