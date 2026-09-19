@@ -109,7 +109,7 @@ app.get(
     const spaHtml = readSpaIndexHtml(spaIndex);
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.setHeader('Cache-Control', 'public, max-age=120, stale-while-revalidate=600');
     if (spaHtml) {
       res.send(injectHeadTags(spaHtml, tags));
       return;

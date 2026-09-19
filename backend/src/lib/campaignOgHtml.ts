@@ -25,12 +25,15 @@ function escapeAttr(value: string): string {
   return escapeHtml(value);
 }
 
-function truncate(text: string, max: number): string {
+function truncateAtWord(text: string, max: number): string {
   const cleaned = text.replace(/\s+/g, ' ').trim();
   if (cleaned.length <= max) {
     return cleaned;
   }
-  return `${cleaned.slice(0, max - 1).trimEnd()}…`;
+  const slice = cleaned.slice(0, max - 1);
+  const lastSpace = slice.lastIndexOf(' ');
+  const cut = lastSpace > max * 0.55 ? slice.slice(0, lastSpace) : slice.trimEnd();
+  return `${cut}…`;
 }
 
 export type CampaignOgPayload = {
@@ -63,7 +66,7 @@ export function buildCampaignOgTags(meta: CampaignOgPayload): string {
     `<meta property="og:url" content="${url}" />`,
     `<meta property="og:image" content="${image}" />`,
     `<meta property="og:image:secure_url" content="${image}" />`,
-    `<meta property="og:image:type" content="image/png" />`,
+    `<meta property="og:image:type" content="image/jpeg" />`,
     `<meta property="og:image:width" content="${meta.imageWidth}" />`,
     `<meta property="og:image:height" content="${meta.imageHeight}" />`,
     `<meta property="og:image:alt" content="${plainTitle}" />`,
@@ -108,11 +111,11 @@ export async function loadCampaignOgPayload(slug: string): Promise<CampaignOgPay
   const origin = publicSiteOrigin();
   const apiOrigin = (env.APP_PUBLIC_BASE_URL.trim() || origin).replace(/\/$/, '');
   const raised = Math.round(campaign.raisedAmount);
-  const blurb = truncate(campaign.shortDescription || DEFAULT_DESCRIPTION, 140);
-  const description = truncate(
-    `D${raised.toLocaleString('en-US')} raised of D${campaign.goalAmount.toLocaleString('en-US')} · ${blurb}`,
-    200
-  );
+  const goal = campaign.goalAmount;
+  // Keep WhatsApp's subtitle short and on a word boundary (avoid mid-sentence cutoffs).
+  const moneyLine = `D${raised.toLocaleString('en-US')} raised of D${goal.toLocaleString('en-US')}`;
+  const blurb = truncateAtWord(campaign.shortDescription || DEFAULT_DESCRIPTION, 90);
+  const description = truncateAtWord(`${moneyLine}. ${blurb}`, 140);
 
   // Cache-bust when totals change so WhatsApp/FB refetch the card.
   const v = `${raised}-${campaign.updatedAt.getTime()}`;
@@ -121,7 +124,7 @@ export async function loadCampaignOgPayload(slug: string): Promise<CampaignOgPay
     title: campaign.title,
     description,
     url: `${origin}/campaign/${campaign.slug}`,
-    imageUrl: `${apiOrigin}/api/campaigns/${encodeURIComponent(campaign.slug)}/share-card.png?v=${v}`,
+    imageUrl: `${apiOrigin}/api/campaigns/${encodeURIComponent(campaign.slug)}/share-card.jpg?v=${v}`,
     imageWidth: SHARE_CARD_WIDTH,
     imageHeight: SHARE_CARD_HEIGHT,
     siteName: BRAND_NAME

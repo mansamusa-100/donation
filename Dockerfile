@@ -28,7 +28,7 @@ ENV PORT=4000
 ENV UPLOADS_DIR=/app/uploads
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get install -y --no-install-recommends openssl ca-certificates fonts-dejavu-core fontconfig \
   && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /app/uploads/avatars /app/uploads/campaign-covers /app/uploads/verification-ids
 
@@ -40,6 +40,7 @@ COPY --from=build /app/frontend/dist ./frontend/dist
 COPY --from=build /app/backend/package.json ./backend/
 COPY --from=build /app/backend/dist ./backend/dist
 COPY --from=build /app/backend/prisma ./backend/prisma
+COPY --from=build /app/backend/assets ./backend/assets
 # Workspaces hoist deps to /app/node_modules — do not expect backend/node_modules.
 
 WORKDIR /app/backend

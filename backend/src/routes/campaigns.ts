@@ -44,7 +44,7 @@ import { isValidContactPhone, normalizeContactPhone } from '../lib/contactPhone.
 import { serializePlatformBankAccount } from '../lib/platformBankAccountSerialize.js';
 import { isOwnedVerificationDocumentUrl } from '../lib/processRasterUpload.js';
 import { recordKycDocumentSubmission } from '../lib/userKyc.js';
-import { renderCampaignShareCard } from '../lib/campaignShareCard.js';
+import { renderCampaignShareCardCached } from '../lib/campaignShareCard.js';
 
 const campaignQuerySchema = z.object({
   search: z.string().trim().optional(),
@@ -676,7 +676,7 @@ campaignsRouter.get(
 );
 
 campaignsRouter.get(
-  '/:slug/share-card.png',
+  ['/:slug/share-card.jpg', '/:slug/share-card.png'],
   asyncHandler(async (req, res) => {
     const slug = String(req.params.slug ?? '').trim();
     const campaign = await prisma.campaign.findUnique({
@@ -697,19 +697,27 @@ campaignsRouter.get(
       return;
     }
 
+    const etag = `"sc-${Math.round(campaign.raisedAmount)}-${campaign.updatedAt.getTime()}"`;
+    if (req.headers['if-none-match'] === etag) {
+      res.status(304).end();
+      return;
+    }
+
     try {
-      const png = await renderCampaignShareCard({
+      const { body, contentType } = await renderCampaignShareCardCached({
         title: campaign.title,
         creatorName: campaign.creatorName,
         coverImage: campaign.coverImage,
         raisedAmount: campaign.raisedAmount,
-        goalAmount: campaign.goalAmount
+        goalAmount: campaign.goalAmount,
+        updatedAtMs: campaign.updatedAt.getTime()
       });
 
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Cache-Control', 'public, max-age=300');
-      res.setHeader('ETag', `"${Math.round(campaign.raisedAmount)}-${campaign.updatedAt.getTime()}"`);
-      res.send(png);
+      res.setHeader('Content-Type', contentType);
+      // Versioned via ?v= — long cache so WhatsApp/FB reopens are fast.
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      res.setHeader('ETag', etag);
+      res.send(body);
     } catch (err) {
       console.error('[share-card] render failed', slug, err);
       res.status(500).json({ message: 'Could not render share card' });
