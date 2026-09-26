@@ -54,6 +54,13 @@ function localDateInputValue(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+/** Inclusive window: today and the previous (days - 1) calendar days. */
+function localDateDaysAgo(days: number) {
+  const d = new Date();
+  d.setDate(d.getDate() - Math.max(0, days - 1));
+  return localDateInputValue(d);
+}
+
 function formatGmd(amount: number) {
   return `D${amount.toLocaleString()}`;
 }
@@ -368,6 +375,14 @@ export function AdminPage() {
   const [withdrawalsTotal, setWithdrawalsTotal] = useState(0);
   const [usersPage, setUsersPage] = useState(1);
   const [usersTotal, setUsersTotal] = useState(0);
+  const [usersSearchInput, setUsersSearchInput] = useState('');
+  const [usersQ, setUsersQ] = useState('');
+  const [usersFrom, setUsersFrom] = useState(() => localDateDaysAgo(7));
+  const [usersTo, setUsersTo] = useState(() => localDateInputValue());
+  const [usersKyc, setUsersKyc] = useState('');
+  const [usersActive, setUsersActive] = useState<'' | 'true' | 'false'>('');
+  const [usersRole, setUsersRole] = useState<'' | 'USER' | 'ADMIN'>('');
+  const [usersLoadError, setUsersLoadError] = useState('');
   const [userDetail, setUserDetail] = useState<AdminUserDetail | null>(null);
   const [userDetailLoading, setUserDetailLoading] = useState(false);
   const [kycNotesDraft, setKycNotesDraft] = useState('');
@@ -446,17 +461,6 @@ export function AdminPage() {
         setAllCampaigns([]);
         setCampaignsTotal(0);
       }
-      if (can('users')) {
-        fetches.push(
-          api.getAdminUsers({ page: usersPage, pageSize: ADMIN_TABLE_PAGE_SIZE }).then((r) => {
-            setUsers(r.items);
-            setUsersTotal(r.total);
-          })
-        );
-      } else {
-        setUsers([]);
-        setUsersTotal(0);
-      }
       if (can('withdrawals')) {
         fetches.push(
           api
@@ -488,8 +492,48 @@ export function AdminPage() {
     activityPage,
     queuePage,
     campaignsPage,
-    withdrawalsPage,
-    usersPage
+    withdrawalsPage
+  ]);
+
+  const loadUsers = useCallback(async () => {
+    if (user?.role !== 'ADMIN') {
+      return;
+    }
+    const p = user.adminPanelPermissions;
+    const full = p == null || p.length === 0;
+    if (!full && !p.includes('users')) {
+      setUsers([]);
+      setUsersTotal(0);
+      return;
+    }
+    setUsersLoadError('');
+    try {
+      const res = await api.getAdminUsers({
+        page: usersPage,
+        pageSize: ADMIN_TABLE_PAGE_SIZE,
+        ...(usersQ ? { q: usersQ } : {}),
+        ...(usersFrom ? { from: usersFrom } : {}),
+        ...(usersTo ? { to: usersTo } : {}),
+        ...(usersKyc ? { kycStatus: usersKyc } : {}),
+        ...(usersActive ? { isActive: usersActive } : {}),
+        ...(usersRole ? { role: usersRole } : {})
+      });
+      setUsers(res.items);
+      setUsersTotal(res.total);
+    } catch (err) {
+      setUsersLoadError(err instanceof Error ? err.message : 'Failed to load users');
+      setUsers([]);
+      setUsersTotal(0);
+    }
+  }, [
+    user,
+    usersPage,
+    usersQ,
+    usersFrom,
+    usersTo,
+    usersKyc,
+    usersActive,
+    usersRole
   ]);
 
   const loadNotifications = useCallback(async () => {
@@ -585,6 +629,22 @@ export function AdminPage() {
   useEffect(() => {
     setAuditPage(1);
   }, [auditType, auditFrom, auditTo, auditQ]);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setUsersQ(usersSearchInput.trim()), 400);
+    return () => window.clearTimeout(id);
+  }, [usersSearchInput]);
+
+  useEffect(() => {
+    setUsersPage(1);
+  }, [usersQ, usersFrom, usersTo, usersKyc, usersActive, usersRole]);
+
+  useEffect(() => {
+    if (user?.role !== 'ADMIN' || tab !== 'users') {
+      return;
+    }
+    void loadUsers();
+  }, [loadUsers, tab, user?.role]);
 
   useEffect(() => {
     if (user?.role !== 'ADMIN' || tab !== 'audit') {
@@ -696,7 +756,7 @@ export function AdminPage() {
       const detail = await api.getAdminUser(userDetail.id);
       setUserDetail(detail);
       setKycNotesDraft(detail.kycNotes ?? '');
-      await loadData();
+      await loadUsers();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'KYC update failed');
     } finally {
@@ -840,7 +900,7 @@ export function AdminPage() {
     setBusyUserId(row.id);
     try {
       await api.updateAdminUserStatus(row.id, !row.isActive);
-      await loadData();
+      await loadUsers();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Update failed');
     } finally {
@@ -1236,7 +1296,8 @@ export function AdminPage() {
               {tab === 'campaigns' && 'Full directory with statuses and moderation actions.'}
               {tab === 'withdrawals' &&
                 'Review organizer payout requests. Approve before sending funds; mark Paid when completed.'}
-              {tab === 'users' && 'Activate or deactivate organizer and admin accounts.'}
+              {tab === 'users' &&
+                'Joined in the last 7 days by default. Search, filter, or widen From/To to find older accounts.'}
               {tab === 'admins' && 'Create additional admins and choose which areas of the panel they may use. Empty permission list = full access.'}
               {tab === 'easypay' &&
                 'Provision a merchant tenant on DPay (or replay safely with the same external user id). Copy businessId into server EASYPAY_PARTNER_BUSINESS_ID.'}
@@ -1817,11 +1878,121 @@ export function AdminPage() {
           {tab === 'users' && (
             <div className="space-y-4">
             <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="border-b border-slate-100 px-4 py-3 space-y-3 bg-slate-50/60">
+              <p className="text-xs text-slate-500">
+                Showing users who joined in the selected date range (newest first). Widen From/To or clear filters to
+                look further back.
+              </p>
+              <div className="flex flex-col lg:flex-row lg:flex-wrap gap-3 lg:items-end">
+                <div className="flex-1 min-w-[180px]">
+                  <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="users-search">
+                    Search
+                  </label>
+                  <input
+                    id="users-search"
+                    type="search"
+                    placeholder="Name, email, or phone"
+                    value={usersSearchInput}
+                    onChange={(e) => setUsersSearchInput(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="users-from">
+                    Joined from
+                  </label>
+                  <input
+                    id="users-from"
+                    type="date"
+                    value={usersFrom}
+                    onChange={(e) => setUsersFrom(e.target.value)}
+                    className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="users-to">
+                    Joined to
+                  </label>
+                  <input
+                    id="users-to"
+                    type="date"
+                    value={usersTo}
+                    onChange={(e) => setUsersTo(e.target.value)}
+                    className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="users-kyc">
+                    KYC
+                  </label>
+                  <select
+                    id="users-kyc"
+                    value={usersKyc}
+                    onChange={(e) => setUsersKyc(e.target.value)}
+                    className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-sm min-w-[140px]">
+                    <option value="">All</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Verified">Verified</option>
+                    <option value="Rejected">Rejected</option>
+                    <option value="Unverified">Unverified</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="users-active">
+                    Status
+                  </label>
+                  <select
+                    id="users-active"
+                    value={usersActive}
+                    onChange={(e) => setUsersActive(e.target.value as '' | 'true' | 'false')}
+                    className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-sm min-w-[120px]">
+                    <option value="">All</option>
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase" htmlFor="users-role">
+                    Role
+                  </label>
+                  <select
+                    id="users-role"
+                    value={usersRole}
+                    onChange={(e) => setUsersRole(e.target.value as '' | 'USER' | 'ADMIN')}
+                    className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-sm min-w-[120px]">
+                    <option value="">All</option>
+                    <option value="USER">User</option>
+                    <option value="ADMIN">Admin</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsersSearchInput('');
+                    setUsersQ('');
+                    setUsersFrom(localDateDaysAgo(7));
+                    setUsersTo(localDateInputValue());
+                    setUsersKyc('');
+                    setUsersActive('');
+                    setUsersRole('');
+                    setUsersPage(1);
+                  }}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                  Reset to last 7 days
+                </button>
+              </div>
+            </div>
+            {usersLoadError && (
+              <div className="mx-4 mt-3 p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm font-medium">
+                {usersLoadError}
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-slate-500 font-semibold bg-slate-50">
                     <th className="px-4 py-3">User</th>
+                    <th className="px-4 py-3">Joined</th>
                     <th className="px-4 py-3">Role</th>
                     <th className="px-4 py-3">KYC</th>
                     <th className="px-4 py-3">Campaigns / donations</th>
@@ -1830,11 +2001,25 @@ export function AdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
+                  {users.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                        No users in this range. Widen the dates or clear filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    users.map((u) => (
                     <tr key={u.id} className="border-b border-slate-100 last:border-0">
                       <td className="px-4 py-3">
                         <div className="font-bold text-slate-900">{u.fullName}</div>
                         <div className="text-xs text-slate-500">{u.email}</div>
+                        {u.phoneNumber ? (
+                          <div className="text-xs text-slate-400 mt-0.5">{u.phoneNumber}</div>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                        <div className="text-sm">{formatDate(u.createdAt)}</div>
+                        <div className="text-xs text-slate-400">{formatDateTime(u.createdAt)}</div>
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -1881,7 +2066,8 @@ export function AdminPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1902,6 +2088,7 @@ export function AdminPage() {
                     {userDetail.phoneNumber ? (
                       <p className="text-xs text-slate-500 mt-0.5">{userDetail.phoneNumber}</p>
                     ) : null}
+                    <p className="text-xs text-slate-500 mt-1">Joined {formatDateTime(userDetail.createdAt)}</p>
                   </div>
                   <button
                     type="button"

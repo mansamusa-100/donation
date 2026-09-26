@@ -5,6 +5,7 @@ import { ProgressBar } from '../components/ProgressBar';
 import { CategoryBadge } from '../components/CategoryBadge';
 import { ShareButtons } from '../components/ShareButtons';
 import { SharePreviewCard } from '../components/SharePreviewCard';
+import { ImageLightbox } from '../components/ImageLightbox';
 import { DonorWall } from '../components/DonorWall';
 import { DonateModal } from '../components/DonateModal';
 import { Avatar } from '../components/Avatar';
@@ -23,6 +24,7 @@ export function CampaignDetailPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isDonateModalOpen, setIsDonateModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'story' | 'updates'>('story');
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!slug) {
@@ -101,13 +103,25 @@ export function CampaignDetailPage() {
   const progress = (campaign.raisedAmount / campaign.goalAmount) * 100;
   const acceptingDonations = campaign.acceptingDonations !== false;
   const showPeriodEndedBanner = campaign.fundraisingPeriodEnded && acceptingDonations;
+  const gallery = campaign.galleryImages ?? [];
+  const lightboxImages = [campaign.coverImage, ...gallery];
 
   return (
     <div className="bg-surface-50 min-h-screen pb-24">
       <div className="w-full h-[40vh] md:h-[50vh] relative">
-        <img src={mediaUrl(campaign.coverImage)} alt={campaign.title} className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-t from-surface-900/80 via-surface-900/20 to-transparent"></div>
-        <div className="absolute bottom-0 left-0 w-full">
+        <button
+          type="button"
+          onClick={() => setLightboxIndex(0)}
+          className="absolute inset-0 block w-full h-full cursor-zoom-in group"
+          aria-label={`View cover photo for ${campaign.title}`}>
+          <img
+            src={mediaUrl(campaign.coverImage)}
+            alt={campaign.title}
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+          />
+        </button>
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface-900/80 via-surface-900/20 to-transparent"></div>
+        <div className="pointer-events-none absolute bottom-0 left-0 w-full">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
             <CategoryBadge
               category={campaign.category}
@@ -140,22 +154,26 @@ export function CampaignDetailPage() {
         )}
         <div className="flex flex-col lg:flex-row gap-8 items-start">
           <div className="w-full lg:w-2/3 space-y-8">
-            {campaign.galleryImages && campaign.galleryImages.length > 0 && (
+            {gallery.length > 0 && (
               <div className="bg-white p-4 rounded-2xl shadow-sm border border-surface-200">
                 <h2 className="font-display font-bold text-surface-900 mb-3 text-sm uppercase tracking-wide">
                   More photos
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
-                  {campaign.galleryImages.map((src) => (
-                    <div
+                  {gallery.map((src, i) => (
+                    <button
                       key={src}
-                      className="relative rounded-xl overflow-hidden border border-surface-200 aspect-[4/3]">
+                      type="button"
+                      onClick={() => setLightboxIndex(i + 1)}
+                      className="relative rounded-xl overflow-hidden border border-surface-200 aspect-[4/3] cursor-zoom-in group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                      aria-label={`View photo ${i + 1} of ${gallery.length}`}>
                       <img
                         src={mediaUrl(src)}
                         alt=""
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
-                    </div>
+                      <span className="pointer-events-none absolute inset-0 bg-surface-900/0 group-hover:bg-surface-900/10 transition-colors" />
+                    </button>
                   ))}
                 </div>
               </div>
@@ -335,6 +353,16 @@ export function CampaignDetailPage() {
         campaignTitle={campaign.title}
         campaignSlug={campaign.slug}
       />
+
+      {lightboxIndex !== null && (
+        <ImageLightbox
+          images={lightboxImages}
+          index={lightboxIndex}
+          alt={campaign.title}
+          onClose={() => setLightboxIndex(null)}
+          onIndexChange={setLightboxIndex}
+        />
+      )}
     </div>
   );
 }

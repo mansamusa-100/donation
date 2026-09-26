@@ -790,9 +790,43 @@ export const api = {
     return request<AdminPaged<AdminCampaign>>(`/api/admin/campaigns${q}`);
   },
 
-  getAdminUsers(params?: { page?: number; pageSize?: number }) {
-    const q = adminListQuery(params?.page, params?.pageSize);
-    return request<AdminPaged<AdminUserRow>>(`/api/admin/users${q}`);
+  getAdminUsers(params?: {
+    page?: number;
+    pageSize?: number;
+    q?: string;
+    from?: string;
+    to?: string;
+    kycStatus?: string;
+    isActive?: 'true' | 'false' | '';
+    role?: 'USER' | 'ADMIN' | '';
+  }) {
+    const q = new URLSearchParams();
+    if (params?.page) {
+      q.set('page', String(params.page));
+    }
+    if (params?.pageSize) {
+      q.set('pageSize', String(params.pageSize));
+    }
+    if (params?.q) {
+      q.set('q', params.q);
+    }
+    if (params?.from) {
+      q.set('from', params.from);
+    }
+    if (params?.to) {
+      q.set('to', params.to);
+    }
+    if (params?.kycStatus) {
+      q.set('kycStatus', params.kycStatus);
+    }
+    if (params?.isActive === 'true' || params?.isActive === 'false') {
+      q.set('isActive', params.isActive);
+    }
+    if (params?.role === 'USER' || params?.role === 'ADMIN') {
+      q.set('role', params.role);
+    }
+    const qs = q.toString();
+    return request<AdminPaged<AdminUserRow>>(`/api/admin/users${qs ? `?${qs}` : ''}`);
   },
 
   getAdminWithdrawalRequests(params?: { page?: number; pageSize?: number }) {

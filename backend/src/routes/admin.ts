@@ -204,6 +204,67 @@ function csvEscape(value: string): string {
   return value;
 }
 
+function parseUserFilters(query: Request['query']): {
+  where: Prisma.UserWhereInput;
+} {
+  const conditions: Prisma.UserWhereInput[] = [];
+
+  const fromRaw = typeof query.from === 'string' ? query.from.trim() : '';
+  if (fromRaw) {
+    const from = new Date(fromRaw);
+    if (!Number.isNaN(from.getTime())) {
+      conditions.push({ createdAt: { gte: from } });
+    }
+  }
+
+  const toRaw = typeof query.to === 'string' ? query.to.trim() : '';
+  if (toRaw) {
+    const to = new Date(toRaw);
+    if (!Number.isNaN(to.getTime())) {
+      const end = new Date(to);
+      end.setUTCHours(23, 59, 59, 999);
+      conditions.push({ createdAt: { lte: end } });
+    }
+  }
+
+  const kycRaw = typeof query.kycStatus === 'string' ? query.kycStatus.trim() : '';
+  if (
+    kycRaw === 'Unverified' ||
+    kycRaw === 'Pending' ||
+    kycRaw === 'Verified' ||
+    kycRaw === 'Rejected'
+  ) {
+    conditions.push({ kycStatus: kycRaw });
+  }
+
+  const activeRaw = typeof query.isActive === 'string' ? query.isActive.trim().toLowerCase() : '';
+  if (activeRaw === 'true' || activeRaw === '1') {
+    conditions.push({ isActive: true });
+  } else if (activeRaw === 'false' || activeRaw === '0') {
+    conditions.push({ isActive: false });
+  }
+
+  const roleRaw = typeof query.role === 'string' ? query.role.trim().toUpperCase() : '';
+  if (roleRaw === 'USER' || roleRaw === 'ADMIN') {
+    conditions.push({ role: roleRaw });
+  }
+
+  const qRaw = typeof query.q === 'string' ? query.q.trim() : '';
+  if (qRaw) {
+    conditions.push({
+      OR: [
+        { fullName: { contains: qRaw, mode: 'insensitive' } },
+        { email: { contains: qRaw, mode: 'insensitive' } },
+        { phoneNumber: { contains: qRaw, mode: 'insensitive' } }
+      ]
+    });
+  }
+
+  return {
+    where: conditions.length ? { AND: conditions } : {}
+  };
+}
+
 function parsePagination(
   query: Request['query'],
   defaultPageSize = 12
@@ -1263,15 +1324,17 @@ adminRouter.post(
   })
 );
 
-// Get all users
+// List users (searchable / filterable — joined date range defaults applied by the admin UI)
 adminRouter.get(
   '/users',
   requireAdminPanel('users'),
   asyncHandler(async (req: Request, res) => {
     const { page, pageSize, skip } = parsePagination(req.query);
+    const { where } = parseUserFilters(req.query);
     const [total, users] = await Promise.all([
-      prisma.user.count(),
+      prisma.user.count({ where }),
       prisma.user.findMany({
+        where,
         select: {
           id: true,
           email: true,
@@ -1307,7 +1370,7 @@ adminRouter.get(
         phoneNumber: u.phoneNumber,
         role: u.role,
         isActive: u.isActive,
-        createdAt: u.createdAt,
+        createdAt: u.createdAt.toISOString(),
         kycStatus: u.kycStatus,
         hasKycDocument: Boolean(u.kycDocumentUrl),
         kycSubmittedAt: u.kycSubmittedAt?.toISOString() ?? null,
