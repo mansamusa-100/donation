@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MessageCircleIcon, FacebookIcon, TwitterIcon, LinkIcon, CheckIcon } from 'lucide-react';
+import { MessageCircleIcon, FacebookIcon, TwitterIcon, LinkIcon, CheckIcon, XIcon } from 'lucide-react';
 import { BRAND_NAME } from '../lib/brand';
 
 interface ShareButtonsProps {
@@ -38,14 +38,69 @@ function TikTokIcon({ className }: { className?: string }) {
   );
 }
 
+function isAndroid(): boolean {
+  return /android/i.test(navigator.userAgent);
+}
+
+function isMobile(): boolean {
+  return /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+
+function canNativeShare(): boolean {
+  return typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+}
+
+/** Try app deep links, then fall back to a web / store URL. */
+function openTikTokApp(kind: 'full' | 'lite') {
+  const storeOrWeb =
+    kind === 'lite'
+      ? 'https://play.google.com/store/apps/details?id=com.tiktok.lite.go'
+      : 'https://www.tiktok.com/';
+
+  if (isAndroid()) {
+    // Full TikTok (global) + Lite Play Store package. Chrome opens the fallback if the app is missing.
+    const pkg = kind === 'lite' ? 'com.tiktok.lite.go' : 'com.zhiliaoapp.musically';
+    const fallbackEnc = encodeURIComponent(storeOrWeb);
+    window.location.href = `intent://www.tiktok.com/#Intent;scheme=https;package=${pkg};S.browser_fallback_url=${fallbackEnc};end`;
+    return;
+  }
+
+  // iOS / other: custom schemes, then web/store if the app does not open.
+  const scheme = kind === 'lite' ? 'snssdk2329://' : 'snssdk1233://';
+  const started = Date.now();
+  window.location.href = scheme;
+  window.setTimeout(() => {
+    if (Date.now() - started < 1600) {
+      window.location.href = storeOrWeb;
+    }
+  }, 1200);
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      window.prompt('Copy this caption for TikTok:', text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
 export function ShareButtons({ url, title, description }: ShareButtonsProps) {
   const [copied, setCopied] = useState(false);
-  const [tiktokHint, setTiktokHint] = useState(false);
+  const [tiktokOpen, setTiktokOpen] = useState(false);
+  const [captionReady, setCaptionReady] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
 
   const whatsappUrl = withUtm(url, 'whatsapp');
   const facebookUrl = withUtm(url, 'facebook');
   const twitterUrl = withUtm(url, 'twitter');
   const tiktokUrl = withUtm(url, 'tiktok');
+  const caption = shareMessage(title, description, tiktokUrl);
 
   const whatsappHref = `https://wa.me/?text=${encodeURIComponent(
     shareMessage(title, description, whatsappUrl)
@@ -67,16 +122,49 @@ export function ShareButtons({ url, title, description }: ShareButtonsProps) {
     }
   };
 
-  const handleTikTok = async () => {
-    const caption = shareMessage(title, description, tiktokUrl);
-    try {
-      await navigator.clipboard.writeText(caption);
-      setTiktokHint(true);
-      window.setTimeout(() => setTiktokHint(false), 4000);
-    } catch {
-      window.prompt('Copy this caption for TikTok:', caption);
+  const prepareTikTokCaption = async () => {
+    const ok = await copyText(caption);
+    setCaptionReady(ok);
+  };
+
+  const openTikTokSheet = async () => {
+    await prepareTikTokCaption();
+    setTiktokOpen(true);
+
+    // On mobile, also try the system share sheet immediately (includes TikTok + TikTok Lite).
+    if (canNativeShare() && isMobile()) {
+      setShareBusy(true);
+      try {
+        await navigator.share({
+          title,
+          text: caption,
+          url: tiktokUrl
+        });
+      } catch {
+        // User cancelled or share failed — sheet below still helps.
+      } finally {
+        setShareBusy(false);
+      }
     }
-    window.open('https://www.tiktok.com/upload?lang=en', '_blank', 'noopener,noreferrer');
+  };
+
+  const shareViaDevice = async () => {
+    if (!canNativeShare()) {
+      return;
+    }
+    setShareBusy(true);
+    try {
+      await prepareTikTokCaption();
+      await navigator.share({
+        title,
+        text: caption,
+        url: tiktokUrl
+      });
+    } catch {
+      // cancelled
+    } finally {
+      setShareBusy(false);
+    }
   };
 
   const btnBase =
@@ -112,8 +200,9 @@ export function ShareButtons({ url, title, description }: ShareButtonsProps) {
         </a>
         <button
           type="button"
-          onClick={() => void handleTikTok()}
+          onClick={() => void openTikTokSheet()}
           aria-label={`Share ${title} on TikTok`}
+          aria-expanded={tiktokOpen}
           className={`${btnBase} bg-[#010101] hover:bg-surface-800 border border-white/10`}>
           <TikTokIcon className="w-5 h-5" />
         </button>
@@ -125,10 +214,66 @@ export function ShareButtons({ url, title, description }: ShareButtonsProps) {
           {copied ? <CheckIcon className="w-5 h-5 text-primary-600" /> : <LinkIcon className="w-5 h-5" />}
         </button>
       </div>
-      {tiktokHint ? (
-        <p className="text-sm text-brand-700 bg-brand-50 border border-brand-100 rounded-xl px-3 py-2">
-          Caption copied — paste it into your TikTok post.
-        </p>
+
+      {tiktokOpen ? (
+        <div
+          className="rounded-2xl border border-surface-200 bg-surface-50 p-4 space-y-3"
+          role="region"
+          aria-label="Share on TikTok">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-semibold text-surface-900 text-sm">Share on TikTok</p>
+              <p className="text-xs text-surface-600 mt-1">
+                {captionReady
+                  ? 'Caption copied. Open your app and paste it into a new post.'
+                  : 'Copy the caption, then open TikTok or TikTok Lite to paste it.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTiktokOpen(false)}
+              className="rounded-lg p-1.5 text-surface-400 hover:bg-white hover:text-surface-700"
+              aria-label="Close TikTok share options">
+              <XIcon className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="flex flex-col sm:flex-row flex-wrap gap-2">
+            {canNativeShare() ? (
+              <button
+                type="button"
+                disabled={shareBusy}
+                onClick={() => void shareViaDevice()}
+                className="rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60">
+                {shareBusy ? 'Opening…' : 'Share via phone…'}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                void prepareTikTokCaption();
+                openTikTokApp('full');
+              }}
+              className="rounded-xl bg-[#010101] px-4 py-2.5 text-sm font-bold text-white hover:bg-surface-800">
+              Open TikTok
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void prepareTikTokCaption();
+                openTikTokApp('lite');
+              }}
+              className="rounded-xl border border-surface-300 bg-white px-4 py-2.5 text-sm font-bold text-surface-800 hover:bg-surface-100">
+              Open TikTok Lite
+            </button>
+            <button
+              type="button"
+              onClick={() => void prepareTikTokCaption()}
+              className="rounded-xl border border-surface-200 bg-white px-4 py-2.5 text-sm font-semibold text-surface-700 hover:bg-surface-100">
+              Copy caption again
+            </button>
+          </div>
+        </div>
       ) : null}
     </div>
   );
