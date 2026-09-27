@@ -881,6 +881,13 @@ export const api = {
     );
   },
 
+  reopenAdminCampaign(campaignId: string, reason: string) {
+    return request<{ message: string }>(
+      `/api/admin/campaigns/${encodeURIComponent(campaignId)}/reopen`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
+    );
+  },
+
   updateAdminCampaignStatus(
     campaignId: string,
     status: 'Active' | 'Rejected' | 'Closed' | 'Ended'

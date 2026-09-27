@@ -90,6 +90,9 @@ export interface AdminCampaign {
   netRaisedAmount?: number;
   lastDonationAt?: string | null;
   inactive60Days?: boolean;
+  ownerConfirmedEndAt?: string | null;
+  /** Organizer ended it themselves and the end date has not passed. */
+  canAdminReopen?: boolean;
   creatorId: string | null;
   createdAt: string;
   updatedAt: string;

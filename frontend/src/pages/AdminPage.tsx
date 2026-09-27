@@ -825,6 +825,29 @@ export function AdminPage() {
     }
   };
 
+  const handleReopenCampaign = async (campaignId: string, title: string) => {
+    const reason = window.prompt(
+      `Reopen "${title}"? It will go back to live and accept donations again.\n\nReason (required, saved in Audit):`
+    );
+    if (reason === null) {
+      return;
+    }
+    if (reason.trim().length < 5) {
+      setActionError('Please give a reason of at least 5 characters to reopen the campaign.');
+      return;
+    }
+    setActionError('');
+    setBusyCampaignId(campaignId);
+    try {
+      await api.reopenAdminCampaign(campaignId, reason.trim());
+      await loadData();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not reopen campaign');
+    } finally {
+      setBusyCampaignId(null);
+    }
+  };
+
   const handleCampaignStatus = async (
     campaignId: string,
     status: 'Active' | 'Rejected' | 'Closed' | 'Ended'
@@ -1720,6 +1743,20 @@ export function AdminPage() {
                                   : 'No donations yet'
                               }>
                               End (60d inactive)
+                            </button>
+                          )}
+                          {c.canAdminReopen && (
+                            <button
+                              type="button"
+                              disabled={busyCampaignId === c.id}
+                              onClick={() => void handleReopenCampaign(c.id, c.title)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold text-emerald-800 border border-emerald-200 bg-emerald-50 disabled:opacity-50"
+                              title={
+                                c.ownerConfirmedEndAt
+                                  ? `Organizer ended it on ${formatDate(c.ownerConfirmedEndAt)}`
+                                  : undefined
+                              }>
+                              Reopen
                             </button>
                           )}
                           {c.status === 'Active' && (

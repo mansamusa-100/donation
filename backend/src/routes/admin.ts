@@ -23,6 +23,7 @@ import {
 } from '../lib/easypayPartner.js';
 import { computeDaysLeftFromEndsAt } from '../lib/campaignEndsAt.js';
 import {
+  canAdminReopenCampaign,
   getLastDonationAt,
   isInactiveForAdminEnd,
   tryFinalizeCampaignEnded
@@ -648,7 +649,8 @@ adminRouter.get(
             daysLeft: computeDaysLeftFromEndsAt(c.endsAt),
             lastDonationAt: last?.toISOString() ?? null,
             inactive60Days:
-              c.status === 'Active' && isInactiveForAdminEnd(last, c.createdAt)
+              c.status === 'Active' && isInactiveForAdminEnd(last, c.createdAt),
+            canAdminReopen: canAdminReopenCampaign(c)
           };
         })
       ),
@@ -1319,6 +1321,72 @@ adminRouter.post(
         slug: updated.slug,
         status: updated.status,
         endedAt: updated.endedAt?.toISOString() ?? null
+      }
+    });
+  })
+);
+
+const reopenCampaignSchema = z.object({
+  reason: z.string().trim().min(5, 'Please give a reason (at least 5 characters)').max(500)
+});
+
+adminRouter.post(
+  '/campaigns/:campaignId/reopen',
+  requireAdminPanel('campaigns'),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const campaignId = String(req.params.campaignId);
+    const { reason } = reopenCampaignSchema.parse(req.body);
+
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      include: { creator: { select: { isActive: true } } }
+    });
+
+    if (!campaign) {
+      res.status(404).json({ message: 'Campaign not found' });
+      return;
+    }
+
+    if (!canAdminReopenCampaign(campaign)) {
+      res.status(400).json({
+        message:
+          campaign.ownerConfirmedEndAt == null
+            ? 'Only campaigns the organizer ended themselves can be reopened.'
+            : 'This campaign cannot be reopened — its end date has passed or it is no longer active/ended.'
+      });
+      return;
+    }
+
+    if (campaign.creator && !campaign.creator.isActive) {
+      res.status(400).json({ message: 'The organizer account is deactivated.' });
+      return;
+    }
+
+    const previousStatus = campaign.status;
+    const updated = await prisma.campaign.update({
+      where: { id: campaignId },
+      data: {
+        status: 'Active',
+        ownerConfirmedEndAt: null,
+        endedAt: null
+      }
+    });
+
+    await recordActivity({
+      type: 'CAMPAIGN_REOPENED',
+      title: `Campaign reopened by admin: ${updated.title}`,
+      detail: `Previous status: ${previousStatus}. Organizer confirmed end at ${campaign.ownerConfirmedEndAt?.toISOString()}. Reason: ${reason}`,
+      campaignId: updated.id,
+      userId: updated.creatorId,
+      actorId: req.userId ?? null
+    });
+
+    res.json({
+      message: 'Campaign is live again and accepting donations',
+      campaign: {
+        id: updated.id,
+        slug: updated.slug,
+        status: updated.status
       }
     });
   })

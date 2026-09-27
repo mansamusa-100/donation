@@ -114,6 +114,23 @@ export function canOwnerConfirmEnd(
   return campaign.status === 'Active' && campaign.ownerConfirmedEndAt == null;
 }
 
+/**
+ * Admin may undo an organizer's confirm-end only while the fundraising period is still open.
+ * Account-closure wind-downs set status Closed, so they never qualify.
+ */
+export function canAdminReopenCampaign(
+  campaign: Pick<Campaign, 'status' | 'endsAt' | 'ownerConfirmedEndAt'>,
+  now = new Date()
+): boolean {
+  if (campaign.ownerConfirmedEndAt == null) {
+    return false;
+  }
+  if (campaign.status !== 'Active' && campaign.status !== 'Ended') {
+    return false;
+  }
+  return isCampaignDonationWindowOpen(campaign.endsAt, now);
+}
+
 export function isInactiveForAdminEnd(
   lastDonationAt: Date | null,
   campaignCreatedAt: Date,
