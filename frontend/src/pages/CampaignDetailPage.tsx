@@ -5,6 +5,7 @@ import { ProgressBar } from '../components/ProgressBar';
 import { CategoryBadge } from '../components/CategoryBadge';
 import { ShareButtons } from '../components/ShareButtons';
 import { SharePreviewCard } from '../components/SharePreviewCard';
+import { DownloadShareCardButton } from '../components/DownloadShareCardButton';
 import { ImageLightbox } from '../components/ImageLightbox';
 import { DonorWall } from '../components/DonorWall';
 import { DonateModal } from '../components/DonateModal';
@@ -274,6 +275,11 @@ export function CampaignDetailPage() {
                   coverImage={campaign.coverImage}
                   raisedAmount={campaign.raisedAmount}
                   goalAmount={campaign.goalAmount}
+                />
+                <DownloadShareCardButton
+                  slug={campaign.slug}
+                  title={campaign.title}
+                  raisedAmount={campaign.raisedAmount}
                 />
               </div>
               <ShareButtons

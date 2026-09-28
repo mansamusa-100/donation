@@ -717,6 +717,11 @@ campaignsRouter.get(
       // Versioned via ?v= — long cache so WhatsApp/FB reopens are fast.
       res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
       res.setHeader('ETag', etag);
+      if (req.query.download === '1') {
+        const ext = contentType === 'image/png' ? 'png' : 'jpg';
+        const safeSlug = slug.replace(/[^a-zA-Z0-9-_]/g, '').slice(0, 80) || 'campaign';
+        res.setHeader('Content-Disposition', `attachment; filename="barakahfund-${safeSlug}.${ext}"`);
+      }
       res.send(body);
     } catch (err) {
       console.error('[share-card] render failed', slug, err);
