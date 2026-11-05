@@ -41,24 +41,50 @@ import {
 export const app = express();
 
 
-// 🟢 CRITICAL SECURITY FIX: Guard against dotfiles, back-ups, and server architecture scanners
-app.use((req, res, next) => {
-  const urlPath = req.path.toLowerCase();
+// // 🟢 CRITICAL SECURITY FIX: Guard against dotfiles, back-ups, and server architecture scanners
+// app.use((req, res, next) => {
+//   const urlPath = req.path.toLowerCase();
   
-  // Explicitly block system file extensions, directory traversals, and common bot scanner signatures
+//   // Explicitly block system file extensions, directory traversals, and common bot scanner signatures
+//   if (
+//     urlPath.includes('/.') ||          // Catches /.env, /.git, /.aws, etc.
+//     urlPath.includes('%2e') ||         // Catches URL-encoded dots (.)
+//     urlPath.includes('%2f') ||         // Catches URL-encoded slashes (/)
+//     urlPath.endsWith('.php') ||        // Catches info.php, test.php
+//     urlPath.includes('actuator') ||    // Catches Spring boot scanner targets
+//     urlPath.includes('debug/vars')     // Catches Go/runtime health dumps
+//   ) {
+//     res.status(404).json({ message: 'Not found' });
+//     return; 
+//   }
+//   next();
+// });
+
+// 🟢 SECURE FILTER: Guard against scanners while bypassing internal health checks
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const urlPath = (req.path || '').toLowerCase();
+  
+  // Always allow the Docker health check to bypass security filters
+  if (urlPath === '/api/health') {
+    next();
+    return;
+  }
+
+  // Explicitly block system file extensions and directory traversals
   if (
-    urlPath.includes('/.') ||          // Catches /.env, /.git, /.aws, etc.
+    urlPath.includes('/.') ||          // Catches /.env, /.git, etc.
     urlPath.includes('%2e') ||         // Catches URL-encoded dots (.)
     urlPath.includes('%2f') ||         // Catches URL-encoded slashes (/)
-    urlPath.endsWith('.php') ||        // Catches info.php, test.php
+    urlPath.endsWith('.php') ||        // Catches scanner endpoints
     urlPath.includes('actuator') ||    // Catches Spring boot scanner targets
-    urlPath.includes('debug/vars')     // Catches Go/runtime health dumps
+    urlPath.includes('debug/vars')     // Catches runtime environment dumps
   ) {
     res.status(404).json({ message: 'Not found' });
     return; 
   }
   next();
 });
+
 
 configureTrustProxy(app);
 app.use(accessLogMiddleware);
