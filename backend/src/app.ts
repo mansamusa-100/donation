@@ -60,30 +60,57 @@ export const app = express();
 //   next();
 // });
 
-// 🟢 SECURE FILTER: Guard against scanners while bypassing internal health checks
+// // 🟢 SECURE FILTER: Guard against scanners while bypassing internal health checks
+// app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+//   const urlPath = (req.path || '').toLowerCase();
+  
+//   // Always allow the Docker health check to bypass security filters
+//   if (urlPath === '/api/health') {
+//     next();
+//     return;
+//   }
+
+//   // Explicitly block system file extensions and directory traversals
+//   if (
+//     urlPath.includes('/.') ||          // Catches /.env, /.git, etc.
+//     urlPath.includes('%2e') ||         // Catches URL-encoded dots (.)
+//     urlPath.includes('%2f') ||         // Catches URL-encoded slashes (/)
+//     urlPath.endsWith('.php') ||        // Catches scanner endpoints
+//     urlPath.includes('actuator') ||    // Catches Spring boot scanner targets
+//     urlPath.includes('debug/vars')     // Catches runtime environment dumps
+//   ) {
+//     res.status(404).json({ message: 'Not found' });
+//     return; 
+//   }
+//   next();
+// });
+
+// 🟢 SECURE FILTER: Protect against automated scanners without blocking database IDs
 app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
   const urlPath = (req.path || '').toLowerCase();
   
-  // Always allow the Docker health check to bypass security filters
-  if (urlPath === '/api/health') {
+  // 1. Always allow internal health checks
+  if (urlPath === '/api/health' || urlPath === '/health') {
     next();
     return;
   }
 
-  // Explicitly block system file extensions and directory traversals
+  // 2. Only block malicious scanners on structural patterns, never loose strings
   if (
     urlPath.includes('/.') ||          // Catches /.env, /.git, etc.
     urlPath.includes('%2e') ||         // Catches URL-encoded dots (.)
     urlPath.includes('%2f') ||         // Catches URL-encoded slashes (/)
-    urlPath.endsWith('.php') ||        // Catches scanner endpoints
-    urlPath.includes('actuator') ||    // Catches Spring boot scanner targets
-    urlPath.includes('debug/vars')     // Catches runtime environment dumps
+    urlPath.endsWith('.php') ||        // Catches info.php, test.php
+    urlPath.includes('/actuator') ||   // Catches targeted Spring boot scans
+    urlPath.includes('/debug/vars')    // 🟢 FIXED: Requires the slash so IDs containing 'vars' don't block!
   ) {
     res.status(404).json({ message: 'Not found' });
     return; 
   }
+  
   next();
 });
+
 
 
 configureTrustProxy(app);
