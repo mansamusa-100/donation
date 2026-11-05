@@ -40,6 +40,26 @@ import {
 
 export const app = express();
 
+
+// 🟢 CRITICAL SECURITY FIX: Guard against dotfiles, back-ups, and server architecture scanners
+app.use((req, res, next) => {
+  const urlPath = req.path.toLowerCase();
+  
+  // Explicitly block system file extensions, directory traversals, and common bot scanner signatures
+  if (
+    urlPath.includes('/.') ||          // Catches /.env, /.git, /.aws, etc.
+    urlPath.includes('%2e') ||         // Catches URL-encoded dots (.)
+    urlPath.includes('%2f') ||         // Catches URL-encoded slashes (/)
+    urlPath.endsWith('.php') ||        // Catches info.php, test.php
+    urlPath.includes('actuator') ||    // Catches Spring boot scanner targets
+    urlPath.includes('debug/vars')     // Catches Go/runtime health dumps
+  ) {
+    res.status(404).json({ message: 'Not found' });
+    return; 
+  }
+  next();
+});
+
 configureTrustProxy(app);
 app.use(accessLogMiddleware);
 app.use(helmetMiddleware);

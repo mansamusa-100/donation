@@ -1,3 +1,16 @@
+# # Automatic HTTPS via Let's Encrypt. DOMAIN is injected from docker compose.
+# {$DOMAIN} {
+# 	encode gzip zstd
+# 	header {
+# 		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+# 		X-Content-Type-Options nosniff
+# 		Referrer-Policy strict-origin-when-cross-origin
+# 		-Server
+# 	}
+# 	reverse_proxy app:4000
+# }
+
+
 # Automatic HTTPS via Let's Encrypt. DOMAIN is injected from docker compose.
 {$DOMAIN} {
 	encode gzip zstd
@@ -7,5 +20,13 @@
 		Referrer-Policy strict-origin-when-cross-origin
 		-Server
 	}
+
+	# ❌ Block access to system paths, hidden files, and common scanners
+	@blocked {
+		path */.* *info.php *status *actuator* *vars
+	}
+	respond @blocked "Not Found" 404
+
+	# Forward legitimate traffic to the app
 	reverse_proxy app:4000
 }
