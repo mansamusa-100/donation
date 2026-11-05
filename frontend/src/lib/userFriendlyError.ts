@@ -23,7 +23,7 @@ export function toUserFriendlyError(
     lower.includes('fetch failed') ||
     err.name === 'TypeError' && lower.includes('fetch')
   ) {
-    return 'We could not reach the server. Please check your internet connection and try again.';
+    return 'Fresh your app page and try again. Please check your internet connection and try again.';
   }
 
   if (lower.includes('timeout') || lower.includes('timed out') || lower.includes('abort')) {
@@ -50,7 +50,7 @@ export function toUserFriendlyError(
       return 'We could not find what you were looking for.';
     }
     if (status >= 500) {
-      return 'Our servers are having trouble right now. Please try again in a moment.';
+      return 'Please refresh your app and try again in a moment.';
     }
     return fallback;
   }

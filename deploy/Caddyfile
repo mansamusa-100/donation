@@ -23,7 +23,7 @@
 
 	# ❌ Block access to system paths, hidden files, and common scanners
 	@blocked {
-		path */.* *info.php *status *actuator* *vars
+		path */.* *info.php *actuator* *vars 
 	}
 	respond @blocked "Not Found" 404
 
